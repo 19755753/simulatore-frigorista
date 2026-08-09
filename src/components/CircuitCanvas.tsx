@@ -9,6 +9,19 @@ export const NODE_H = 100;
 export const CANVAS_W = 1240;
 export const CANVAS_H = 600;
 const PORT_HIT_RADIUS = 34;
+// La porta sporge oltre il bordo del nodo (right:-8px/bottom:-8px, 18px di diametro): senza questo
+// margine un nodo trascinato vicino al bordo destro/inferiore del canvas avrebbe la porta parzialmente
+// fuori dall'area visibile/raggiungibile, rendendo il collegamento da lì impossibile da agganciare.
+const PORT_EDGE_MARGIN = 24;
+const MAX_NODE_X = CANVAS_W - NODE_W - PORT_EDGE_MARGIN;
+const MAX_NODE_Y = CANVAS_H - NODE_H - PORT_EDGE_MARGIN;
+
+function clampNodePos(x: number, y: number) {
+  return {
+    x: Math.min(Math.max(x, 0), MAX_NODE_X),
+    y: Math.min(Math.max(y, 0), MAX_NODE_Y),
+  };
+}
 
 /** Porta di uscita (in basso a destra) — punto di aggancio interattivo e da cui parte ogni tubo. */
 function portPoint(node: CanvasNode) {
@@ -104,6 +117,22 @@ export function CircuitCanvas({
     rejectTimeoutRef.current = window.setTimeout(() => setRejectInfo(null), 4200);
   }
 
+  // Il drag&drop nativo dalla cassetta attrezzi scorre automaticamente il canvas vicino ai bordi;
+  // i gesti basati su pointer (disegna collegamento, completa tubo in sospeso) non lo fanno di
+  // default, quindi un componente scrollato fuori vista (tipico per gli ultimi posizionati, spesso
+  // sul lato destro/basso) risulterebbe irraggiungibile. Replichiamo qui lo stesso scroll automatico.
+  function autoScrollNearEdge(clientX: number, clientY: number) {
+    const el = canvasRef.current;
+    if (!el) return;
+    const rect = el.getBoundingClientRect();
+    const EDGE = 48;
+    const STEP = 22;
+    if (clientX > rect.right - EDGE) el.scrollLeft = Math.min(el.scrollLeft + STEP, el.scrollWidth);
+    else if (clientX < rect.left + EDGE) el.scrollLeft = Math.max(el.scrollLeft - STEP, 0);
+    if (clientY > rect.bottom - EDGE) el.scrollTop = Math.min(el.scrollTop + STEP, el.scrollHeight);
+    else if (clientY < rect.top + EDGE) el.scrollTop = Math.max(el.scrollTop - STEP, 0);
+  }
+
   function findNodeAt(px: number, py: number): ComponentKind | null {
     for (const node of nodeList) {
       const port = portPoint(node);
@@ -140,10 +169,10 @@ export function CircuitCanvas({
   function handleNodeDragMove(e: PointerEvent) {
     const drag = dragRef.current;
     if (!drag) return;
+    autoScrollNearEdge(e.clientX, e.clientY);
     const dx = e.clientX - drag.startPointerX;
     const dy = e.clientY - drag.startPointerY;
-    const nx = Math.min(Math.max(drag.startNodeX + dx, 0), CANVAS_W - NODE_W);
-    const ny = Math.min(Math.max(drag.startNodeY + dy, 0), CANVAS_H - NODE_H);
+    const { x: nx, y: ny } = clampNodePos(drag.startNodeX + dx, drag.startNodeY + dy);
     onMoveNode(drag.kind, nx, ny);
   }
 
@@ -165,6 +194,7 @@ export function CircuitCanvas({
   }
 
   function handleConnectMove(e: PointerEvent) {
+    autoScrollNearEdge(e.clientX, e.clientY);
     const p = toCanvasPoint(e.clientX, e.clientY);
     connectingRef.current = connectingRef.current ? { ...connectingRef.current, x: p.x, y: p.y } : null;
     setConnecting(connectingRef.current);
@@ -194,6 +224,7 @@ export function CircuitCanvas({
   }
 
   function handleCompleteMove(e: PointerEvent) {
+    autoScrollNearEdge(e.clientX, e.clientY);
     const p = toCanvasPoint(e.clientX, e.clientY);
     completingRef.current = completingRef.current ? { ...completingRef.current, x: p.x, y: p.y } : null;
     setCompleting(completingRef.current);
@@ -236,14 +267,18 @@ export function CircuitCanvas({
     if (selectedPiece.kind === 'tubo-hp' || selectedPiece.kind === 'tubo-bp' || selectedPiece.kind === 'fluido') return;
     if (e.target !== canvasRef.current && !(e.target as HTMLElement).classList.contains('canvas-grid')) return;
     const p = toCanvasPoint(e.clientX, e.clientY);
-    const x = Math.min(Math.max(p.x - NODE_W / 2, 0), CANVAS_W - NODE_W);
-    const y = Math.min(Math.max(p.y - NODE_H / 2, 0), CANVAS_H - NODE_H);
+    const { x, y } = clampNodePos(p.x - NODE_W / 2, p.y - NODE_H / 2);
     onPlaceNode(selectedPiece.id, x, y);
     onPlacedSuccess();
   }
 
   function handleCanvasDragOver(e: React.DragEvent) {
     e.preventDefault();
+    // Il drag&drop nativo non scorre automaticamente il canvas verso un bersaglio fuori vista
+    // (a differenza dei gesti basati su pointer, gestiti da autoScrollNearEdge altrove): lo facciamo
+    // qui a mano, altrimenti un componente scrollato fuori dall'area visibile — tipicamente gli
+    // ultimi posizionati, spesso più a destra/in basso — sarebbe impossibile da agganciare.
+    autoScrollNearEdge(e.clientX, e.clientY);
   }
 
   function handleCanvasDrop(e: React.DragEvent) {
@@ -258,8 +293,7 @@ export function CircuitCanvas({
       return;
     }
     if (piece.kind === 'fluido') return;
-    const x = Math.min(Math.max(p.x - NODE_W / 2, 0), CANVAS_W - NODE_W);
-    const y = Math.min(Math.max(p.y - NODE_H / 2, 0), CANVAS_H - NODE_H);
+    const { x, y } = clampNodePos(p.x - NODE_W / 2, p.y - NODE_H / 2);
     onPlaceNode(pieceId, x, y);
   }
 
