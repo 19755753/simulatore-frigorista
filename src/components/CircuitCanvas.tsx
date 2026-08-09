@@ -10,24 +10,24 @@ export const CANVAS_W = 1240;
 export const CANVAS_H = 600;
 const PORT_HIT_RADIUS = 34;
 
-function clipToRect(cx: number, cy: number, w: number, h: number, tx: number, ty: number) {
-  const dx = tx - cx;
-  const dy = ty - cy;
-  if (dx === 0 && dy === 0) return { x: cx, y: cy };
-  const halfW = w / 2;
-  const halfH = h / 2;
-  const scaleX = dx !== 0 ? halfW / Math.abs(dx) : Infinity;
-  const scaleY = dy !== 0 ? halfH / Math.abs(dy) : Infinity;
-  const scale = Math.min(scaleX, scaleY);
-  return { x: cx + dx * scale, y: cy + dy * scale };
-}
-
-function nodeCenter(node: CanvasNode) {
-  return { x: node.x + NODE_W / 2, y: node.y + NODE_H / 2 };
-}
-
+/** Porta di uscita (in basso a destra) — punto di aggancio interattivo e da cui parte ogni tubo. */
 function portPoint(node: CanvasNode) {
   return { x: node.x + NODE_W, y: node.y + NODE_H };
+}
+
+/** Punto di ingresso (a sinistra, centrato) — dove i tubi arrivano sul componente successivo. */
+function inPoint(node: CanvasNode) {
+  return { x: node.x, y: node.y + NODE_H / 2 };
+}
+
+/** Percorso a gomiti (90°) tra due punti, come farebbe un frigorista piegando il tubo. */
+function elbowPath(x1: number, y1: number, x2: number, y2: number): string {
+  const midX = (x1 + x2) / 2;
+  return `M ${x1} ${y1} L ${midX} ${y1} L ${midX} ${y2} L ${x2} ${y2}`;
+}
+
+function elbowMidpoint(x1: number, y1: number, x2: number, y2: number) {
+  return { x: (x1 + x2) / 2, y: (y1 + y2) / 2 };
 }
 
 interface DragState {
@@ -308,24 +308,21 @@ export function CircuitCanvas({
 
           if (ev.status === 'pending') {
             const loose = looseEndFor(ev.edge.id, ev.edge.from);
-            const c1 = nodeCenter(fromNode);
-            const p1 = clipToRect(c1.x, c1.y, NODE_W, NODE_H, loose.x, loose.y);
+            const p1 = portPoint(fromNode);
             const isHP = ev.edge.from === 'compressore' || ev.edge.from === 'condensatore' || ev.edge.from === 'filtro' || ev.edge.from === 'voyant';
             const color = isHP ? '#d64545' : '#3f7fd6';
             const width = ev.edge.diametro ? DIAMETER_STROKE[ev.edge.diametro] : 4;
             return (
               <g key={ev.edge.id}>
-                <line x1={p1.x} y1={p1.y} x2={loose.x} y2={loose.y} stroke={color} strokeWidth={width} strokeLinecap="round" strokeDasharray="3 7" opacity={0.85} />
+                <path d={elbowPath(p1.x, p1.y, loose.x, loose.y)} fill="none" stroke={color} strokeWidth={width} strokeLinecap="round" strokeLinejoin="round" strokeDasharray="3 7" opacity={0.85} />
               </g>
             );
           }
 
           const toNode = ev.edge.to ? nodes[ev.edge.to] : null;
           if (!toNode) return null;
-          const c1 = nodeCenter(fromNode);
-          const c2 = nodeCenter(toNode);
-          const p1 = clipToRect(c1.x, c1.y, NODE_W, NODE_H, c2.x, c2.y);
-          const p2 = clipToRect(c2.x, c2.y, NODE_W, NODE_H, c1.x, c1.y);
+          const p1 = portPoint(fromNode);
+          const p2 = inPoint(toNode);
           const isWrong = ev.status === 'wrong';
           const isHP = ev.status === 'correct-hp';
           const noDiametro = !isWrong && !ev.edge.diametro;
@@ -333,19 +330,19 @@ export function CircuitCanvas({
           const marker = isWrong ? 'arrow-wrong' : isHP ? 'arrow-hp' : 'arrow-bp';
           const width = isWrong ? 4 : ev.edge.diametro ? DIAMETER_STROKE[ev.edge.diametro] : 3;
           const isActive = activeEdgeIds.has(ev.edge.id);
-          const midX = (p1.x + p2.x) / 2;
-          const midY = (p1.y + p2.y) / 2;
+          const mid = elbowMidpoint(p1.x, p1.y, p2.x, p2.y);
           const pathId = `edge-path-${ev.edge.id}`;
 
           return (
             <g key={ev.edge.id}>
               <path
                 id={pathId}
-                d={`M ${p1.x} ${p1.y} L ${p2.x} ${p2.y}`}
+                d={elbowPath(p1.x, p1.y, p2.x, p2.y)}
                 fill="none"
                 stroke={color}
                 strokeWidth={width}
                 strokeLinecap="round"
+                strokeLinejoin="round"
                 strokeDasharray={isWrong ? '9 7' : undefined}
                 markerEnd={`url(#${marker})`}
                 opacity={isWrong ? 0.85 : 1}
@@ -363,7 +360,7 @@ export function CircuitCanvas({
                 </>
               )}
               {isWrong && (
-                <g transform={`translate(${midX} ${midY})`}>
+                <g transform={`translate(${mid.x} ${mid.y})`}>
                   <circle r="9" fill="#e0a83f" />
                   <text textAnchor="middle" dy="4" fontSize="12" fontWeight="700" fill="#241a00">!</text>
                 </g>
@@ -373,18 +370,16 @@ export function CircuitCanvas({
         })}
 
         {connecting && nodes[connecting.from] && (() => {
-          const c1 = nodeCenter(nodes[connecting.from]!);
-          const p1 = clipToRect(c1.x, c1.y, NODE_W, NODE_H, connecting.x, connecting.y);
+          const p1 = portPoint(nodes[connecting.from]!);
           return (
-            <line x1={p1.x} y1={p1.y} x2={connecting.x} y2={connecting.y} stroke="#c9793f" strokeWidth="3" strokeDasharray="6 6" strokeLinecap="round" />
+            <path d={elbowPath(p1.x, p1.y, connecting.x, connecting.y)} fill="none" stroke="#c9793f" strokeWidth="3" strokeDasharray="6 6" strokeLinecap="round" strokeLinejoin="round" />
           );
         })()}
 
         {completing && nodes[completing.from] && (() => {
-          const c1 = nodeCenter(nodes[completing.from]!);
-          const p1 = clipToRect(c1.x, c1.y, NODE_W, NODE_H, completing.x, completing.y);
+          const p1 = portPoint(nodes[completing.from]!);
           return (
-            <line x1={p1.x} y1={p1.y} x2={completing.x} y2={completing.y} stroke="#c9793f" strokeWidth="3" strokeDasharray="6 6" strokeLinecap="round" />
+            <path d={elbowPath(p1.x, p1.y, completing.x, completing.y)} fill="none" stroke="#c9793f" strokeWidth="3" strokeDasharray="6 6" strokeLinecap="round" strokeLinejoin="round" />
           );
         })()}
       </svg>
@@ -418,16 +413,15 @@ export function CircuitCanvas({
         const fromNode = nodes[ev.edge.from];
         const toNode = ev.edge.to ? nodes[ev.edge.to] : null;
         if (!fromNode || !toNode) return null;
-        const c1 = nodeCenter(fromNode);
-        const c2 = nodeCenter(toNode);
-        const midX = (c1.x + c2.x) / 2;
-        const midY = (c1.y + c2.y) / 2;
+        const p1 = portPoint(fromNode);
+        const p2 = inPoint(toNode);
+        const mid = elbowMidpoint(p1.x, p1.y, p2.x, p2.y);
         return (
           <button
             key={ev.edge.id}
             type="button"
             className="edge-remove-btn"
-            style={{ left: midX - 10, top: midY - 10 }}
+            style={{ left: mid.x - 10, top: mid.y - 10 }}
             onPointerDown={(e) => e.stopPropagation()}
             onClick={(e) => { e.stopPropagation(); onRemoveEdge(ev.edge.id); }}
             title="Rimuovi questo collegamento"
