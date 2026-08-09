@@ -94,10 +94,22 @@ export function findRequiredEdge(from: ComponentKind, to: ComponentKind): Requir
   return REQUIRED_EDGES.find((e) => e.from === from && e.to === to);
 }
 
+/**
+ * Linea (HP/BP) che esce dalla porta di ciascun componente del ciclo — è una proprietà del
+ * componente sorgente, non dipende da dove l'utente lo collega: ciò che esce dal compressore
+ * è sempre alta pressione, ciò che esce dal détendeur è sempre bassa pressione.
+ */
+export const OUT_LINE_KIND: Partial<Record<ComponentKind, 'HP' | 'BP'>> = {
+  compressore: 'HP',
+  condensatore: 'HP',
+  filtro: 'HP',
+  voyant: 'HP',
+  detendeur: 'BP',
+  evaporatore: 'BP',
+};
+
 /** Slot ausiliari a posizione fissa: non fanno parte del canvas libero. */
 export const AUX_SLOTS: { id: ComponentKind; label: string; compactLabel: string; aiuto: string }[] = [
-  { id: 'tubo-hp', label: 'Diametro linea liquido (HP)', compactLabel: 'Tubo HP', aiuto: 'Trascina qui il tubo con il diametro scelto per la linea alta pressione.' },
-  { id: 'tubo-bp', label: 'Diametro aspirazione (BP)', compactLabel: 'Tubo BP', aiuto: 'Trascina qui il tubo con il diametro scelto per la linea bassa pressione.' },
   { id: 'fluido', label: 'Fluido frigorigeno', compactLabel: 'Fluido frigorigeno', aiuto: 'Trascina qui la bombola del fluido frigorigeno da caricare nell\'impianto.' },
 ];
 

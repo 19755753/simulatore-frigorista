@@ -2,12 +2,13 @@ import {
   AUX_SLOTS,
   COMPONENT_INFO,
   ORDERED_KINDS,
+  OUT_LINE_KIND,
   REQUIRED_EDGES,
   findRequiredEdge,
   type ComponentKind,
   type ToolboxPiece,
 } from '../data/components';
-import { diameterGuideFor, type PowerCategory } from '../data/plantTypes';
+import { diameterGuideFor, type PowerCategory, type TubeDiameter } from '../data/plantTypes';
 import type { RefrigerantId } from '../data/refrigerants';
 
 export interface CanvasNode {
@@ -22,7 +23,8 @@ export type PlacedNodes = Partial<Record<ComponentKind, CanvasNode>>;
 export interface WireEdge {
   id: string;
   from: ComponentKind;
-  to: ComponentKind;
+  to: ComponentKind | null; // null finché l'estremità libera del tubo non viene agganciata
+  diametro?: TubeDiameter;
 }
 
 export type PlacedPieces = Partial<Record<ComponentKind, ToolboxPiece>>;
@@ -34,13 +36,34 @@ export interface DropCheck {
 
 const AUX_LABEL: Record<string, string> = Object.fromEntries(AUX_SLOTS.map((s) => [s.id, s.label]));
 
-/** Verifica se un pezzo ausiliario (tubo/fluido) può essere posato in uno slot fisso. */
+/** Verifica se un pezzo ausiliario (fluido) può essere posato in uno slot fisso. */
 export function canPlaceAux(slotId: ComponentKind, piece: ToolboxPiece): DropCheck {
   if (piece.kind === slotId) return { ok: true };
   return {
     ok: false,
     message: `Questo è "${piece.label}": va nello slot "${AUX_LABEL[piece.kind] ?? piece.kind}", non qui. Qui serve: ${AUX_LABEL[slotId] ?? slotId}.`,
   };
+}
+
+function labelOf(kind: ComponentKind): string {
+  return COMPONENT_INFO[kind].label;
+}
+
+/** Verifica se un tubo (HP o BP) può essere agganciato alla porta di un componente. */
+export function canAttachTube(fromKind: ComponentKind, pieceKind: 'tubo-hp' | 'tubo-bp'): DropCheck {
+  const expected = OUT_LINE_KIND[fromKind];
+  if (!expected) {
+    return { ok: false, message: `"${labelOf(fromKind)}" non ha una linea di mandata/aspirazione da collegare qui.` };
+  }
+  const pieceSide = pieceKind === 'tubo-hp' ? 'HP' : 'BP';
+  if (pieceSide !== expected) {
+    const expectedLabel = expected === 'HP' ? 'alta pressione (HP)' : 'bassa pressione (BP)';
+    return {
+      ok: false,
+      message: `Da "${labelOf(fromKind)}" esce la linea ${expectedLabel}: usa un tubo ${expected}, non ${pieceSide}.`,
+    };
+  }
+  return { ok: true };
 }
 
 export interface DidacticMessage {
@@ -50,7 +73,7 @@ export interface DidacticMessage {
   whatToDo: string;
 }
 
-export type EdgeStatus = 'correct-hp' | 'correct-bp' | 'wrong';
+export type EdgeStatus = 'correct-hp' | 'correct-bp' | 'wrong' | 'pending';
 
 export interface EdgeEvaluation {
   edge: WireEdge;
@@ -60,7 +83,7 @@ export interface EdgeEvaluation {
 
 export interface CircuitValidation {
   edgeEvaluations: EdgeEvaluation[];
-  activeEdgeIds: Set<string>; // edges that are part of the correctly-flowing path so far
+  activeEdgeIds: Set<string>; // edges che fanno parte del percorso corretto già completato
   blockedAtIndex: number | null; // indice in ORDERED_KINDS dove il flusso si interrompe
   sequenceComplete: boolean;
   diameterOk: boolean;
@@ -68,10 +91,6 @@ export interface CircuitValidation {
   temperatureOk: boolean;
   isFullyCorrect: boolean;
   messages: DidacticMessage[];
-}
-
-function labelOf(kind: ComponentKind): string {
-  return COMPONENT_INFO[kind].label;
 }
 
 function explainMissingNode(kind: ComponentKind): DidacticMessage {
@@ -90,7 +109,16 @@ function explainMissingEdge(from: ComponentKind, to: ComponentKind): DidacticMes
     severity: 'error',
     title: `Manca il collegamento: ${labelOf(from)} → ${labelOf(to)}`,
     why: `${toInfo.label} ${toInfo.ruolo}. ${toInfo.perche}.`,
-    whatToDo: `Trascina un tubo dalla porta di uscita di "${labelOf(from)}" fino a "${labelOf(to)}" per collegarli.`,
+    whatToDo: `Trascina un tubo dalla cassetta attrezzi sulla porta di "${labelOf(from)}" (o trascina direttamente dal suo pallino) fino a "${labelOf(to)}" per collegarli.`,
+  };
+}
+
+function explainPendingEdge(from: ComponentKind): DidacticMessage {
+  return {
+    severity: 'warning',
+    title: `Tubo agganciato a "${labelOf(from)}" ma non ancora collegato`,
+    why: 'Hai attaccato un\'estremità del tubo, ma l\'altra estremità è ancora libera: il circuito non è chiuso.',
+    whatToDo: `Trascina l'estremità libera del tubo (il pallino) fino al componente successivo per completare il collegamento.`,
   };
 }
 
@@ -130,6 +158,9 @@ function explainWrongEdge(from: ComponentKind, to: ComponentKind): DidacticMessa
 
 export function evaluateEdges(edges: WireEdge[]): EdgeEvaluation[] {
   return edges.map((edge) => {
+    if (edge.to === null) {
+      return { edge, status: 'pending', message: explainPendingEdge(edge.from) };
+    }
     const required = findRequiredEdge(edge.from, edge.to);
     if (required) {
       return { edge, status: required.kind === 'HP' ? 'correct-hp' : 'correct-bp' };
@@ -150,14 +181,15 @@ export function validateCircuit(params: {
   const messages: DidacticMessage[] = [];
   const edgeEvaluations = evaluateEdges(edges);
   const activeEdgeIds = new Set<string>();
+  const guide = diameterGuideFor(potenza);
 
-  // Segnala tutti i collegamenti sbagliati, ovunque si trovino.
   for (const ev of edgeEvaluations) {
-    if (ev.status === 'wrong' && ev.message) messages.push(ev.message);
+    if ((ev.status === 'wrong' || ev.status === 'pending') && ev.message) messages.push(ev.message);
   }
 
-  // Percorre il ciclo richiesto a partire dal compressore, seguendo solo collegamenti corretti disegnati dall'utente.
+  // Percorre il ciclo richiesto a partire dal compressore, seguendo solo collegamenti corretti e completi.
   let blockedAtIndex: number | null = null;
+  const matchedEdgesInOrder: WireEdge[] = [];
   for (let i = 0; i < ORDERED_KINDS.length; i++) {
     const fromKind = ORDERED_KINDS[i];
     const toKind = ORDERED_KINDS[(i + 1) % ORDERED_KINDS.length];
@@ -173,7 +205,7 @@ export function validateCircuit(params: {
       break;
     }
     const match = edgeEvaluations.find(
-      (ev) => ev.status !== 'wrong' && ev.edge.from === fromKind && ev.edge.to === toKind,
+      (ev) => (ev.status === 'correct-hp' || ev.status === 'correct-bp') && ev.edge.from === fromKind && ev.edge.to === toKind,
     );
     if (!match) {
       blockedAtIndex = i;
@@ -181,38 +213,33 @@ export function validateCircuit(params: {
       break;
     }
     activeEdgeIds.add(match.edge.id);
+    matchedEdgesInOrder.push(match.edge);
   }
 
   const sequenceComplete = blockedAtIndex === null;
 
-  const diametroHP = auxPlaced['tubo-hp']?.diametro ?? null;
-  const diametroBP = auxPlaced['tubo-bp']?.diametro ?? null;
-  const guide = diameterGuideFor(potenza);
-  const diameterOk = !!diametroHP && !!diametroBP && guide.hp.includes(diametroHP) && guide.bp.includes(diametroBP);
-  if (diametroHP && !guide.hp.includes(diametroHP)) {
-    messages.push({
-      severity: 'warning',
-      title: `Diametro HP ${diametroHP}" poco adatto a questo impianto`,
-      why: `Per un impianto "${guide.label}" un tubo così dimensionato rischia una perdita di carico eccessiva o una velocità del fluido non corretta lungo la linea liquido.`,
-      whatToDo: `Sostituiscilo con un tubo HP da ${guide.hp.join('" o ')}".`,
-    });
-  }
-  if (diametroBP && !guide.bp.includes(diametroBP)) {
-    messages.push({
-      severity: 'warning',
-      title: `Diametro BP ${diametroBP}" poco adatto a questo impianto`,
-      why: `Per un impianto "${guide.label}" un tubo così dimensionato rischia una perdita di carico eccessiva sulla linea di aspirazione o un rientro olio insufficiente al compressore.`,
-      whatToDo: `Sostituiscilo con un tubo BP da ${guide.bp.join('" o ')}".`,
-    });
-  }
-  if (!diametroHP || !diametroBP) {
-    messages.push({
-      severity: 'warning',
-      title: 'Diametri tubo non ancora assegnati',
-      why: 'Ogni linea del circuito ha bisogno di un tubo con un diametro definito per poter essere caricata e funzionare.',
-      whatToDo: 'Trascina un tubo HP sullo slot "Diametro linea liquido" e un tubo BP sullo slot "Diametro aspirazione".',
-    });
-  }
+  let diameterOk = sequenceComplete;
+  matchedEdgesInOrder.forEach((edge, i) => {
+    const req = REQUIRED_EDGES[i];
+    const allowed = req.kind === 'HP' ? guide.hp : guide.bp;
+    if (!edge.diametro) {
+      diameterOk = false;
+      messages.push({
+        severity: 'warning',
+        title: `Manca il diametro sul tratto ${labelOf(req.from)} → ${labelOf(req.to)}`,
+        why: `Il tubo è collegato ma senza un diametro definito non può essere caricato: ogni tratto del circuito ha bisogno di un tubo di dimensione nota.`,
+        whatToDo: `Trascina un tubo ${req.kind} dalla cassetta attrezzi sulla porta di "${labelOf(req.from)}" per assegnargli un diametro.`,
+      });
+    } else if (!allowed.includes(edge.diametro)) {
+      diameterOk = false;
+      messages.push({
+        severity: 'warning',
+        title: `Diametro ${req.kind} ${edge.diametro}" poco adatto sul tratto ${labelOf(req.from)} → ${labelOf(req.to)}`,
+        why: `Per un impianto "${guide.label}" un tubo così dimensionato rischia una perdita di carico eccessiva o una velocità del fluido non corretta.`,
+        whatToDo: `Sostituiscilo trascinando un tubo ${req.kind} da ${allowed.join('" o ')}" sulla porta di "${labelOf(req.from)}".`,
+      });
+    }
+  });
 
   const fluidOk = !!auxPlaced.fluido;
   if (!fluidOk) {

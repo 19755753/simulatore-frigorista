@@ -1,13 +1,14 @@
 import { useRef, useState } from 'react';
 import type { ComponentKind, ToolboxPiece } from '../data/components';
-import { DIAMETER_STROKE, type TubeDiameter } from '../data/plantTypes';
-import type { CanvasNode, EdgeEvaluation, PlacedNodes } from '../logic/validation';
+import { DIAMETER_STROKE } from '../data/plantTypes';
+import type { CanvasNode, DropCheck, EdgeEvaluation, PlacedNodes } from '../logic/validation';
 import { pieceIcon } from './Toolbox';
 
 export const NODE_W = 150;
 export const NODE_H = 100;
 export const CANVAS_W = 1240;
 export const CANVAS_H = 600;
+const PORT_HIT_RADIUS = 34;
 
 function clipToRect(cx: number, cy: number, w: number, h: number, tx: number, ty: number) {
   const dx = tx - cx;
@@ -25,6 +26,10 @@ function nodeCenter(node: CanvasNode) {
   return { x: node.x + NODE_W / 2, y: node.y + NODE_H / 2 };
 }
 
+function portPoint(node: CanvasNode) {
+  return { x: node.x + NODE_W, y: node.y + NODE_H };
+}
+
 interface DragState {
   kind: ComponentKind;
   startPointerX: number;
@@ -39,32 +44,52 @@ interface ConnectState {
   y: number;
 }
 
+interface CompleteState {
+  edgeId: string;
+  from: ComponentKind;
+  x: number;
+  y: number;
+}
+
+interface RejectInfo {
+  kind: ComponentKind;
+  message: string;
+}
+
 interface CircuitCanvasProps {
   nodes: PlacedNodes;
   edgeEvaluations: EdgeEvaluation[];
   activeEdgeIds: Set<string>;
   simulationRunning: boolean;
   flowOk: boolean;
-  diametroHP: TubeDiameter | null;
-  diametroBP: TubeDiameter | null;
+  allPieces: ToolboxPiece[];
   selectedPiece: ToolboxPiece | null;
   onPlaceNode: (pieceId: string, x: number, y: number) => void;
   onMoveNode: (kind: ComponentKind, x: number, y: number) => void;
   onRemoveNode: (kind: ComponentKind) => void;
   onAddEdge: (from: ComponentKind, to: ComponentKind) => void;
+  onCompleteEdge: (edgeId: string, to: ComponentKind) => void;
   onRemoveEdge: (id: string) => void;
+  onAttachTube: (nodeKind: ComponentKind, pieceId: string) => DropCheck;
   onPlacedSuccess: () => void;
 }
 
 export function CircuitCanvas({
-  nodes, edgeEvaluations, activeEdgeIds, simulationRunning, flowOk,
-  diametroHP, diametroBP, selectedPiece, onPlaceNode, onMoveNode, onRemoveNode,
-  onAddEdge, onRemoveEdge, onPlacedSuccess,
+  nodes, edgeEvaluations, activeEdgeIds, simulationRunning, flowOk, allPieces,
+  selectedPiece, onPlaceNode, onMoveNode, onRemoveNode,
+  onAddEdge, onCompleteEdge, onRemoveEdge, onAttachTube, onPlacedSuccess,
 }: CircuitCanvasProps) {
   const canvasRef = useRef<HTMLDivElement>(null);
   const dragRef = useRef<DragState | null>(null);
   const connectingRef = useRef<ConnectState | null>(null);
+  const completingRef = useRef<CompleteState | null>(null);
   const [connecting, setConnecting] = useState<ConnectState | null>(null);
+  const [completing, setCompleting] = useState<CompleteState | null>(null);
+  const [loosePositions, setLoosePositions] = useState<Record<string, { x: number; y: number }>>({});
+  const [rejectInfo, setRejectInfo] = useState<RejectInfo | null>(null);
+  const rejectTimeoutRef = useRef<number | null>(null);
+
+  const nodeList = Object.values(nodes).filter(Boolean) as CanvasNode[];
 
   function toCanvasPoint(clientX: number, clientY: number) {
     const el = canvasRef.current;
@@ -73,17 +98,41 @@ export function CircuitCanvas({
     return { x: clientX - rect.left + el.scrollLeft, y: clientY - rect.top + el.scrollTop };
   }
 
+  function showReject(kind: ComponentKind, message: string) {
+    if (rejectTimeoutRef.current) window.clearTimeout(rejectTimeoutRef.current);
+    setRejectInfo({ kind, message });
+    rejectTimeoutRef.current = window.setTimeout(() => setRejectInfo(null), 4200);
+  }
+
+  function findNodeAt(px: number, py: number): ComponentKind | null {
+    for (const node of nodeList) {
+      const port = portPoint(node);
+      const distToPort = Math.hypot(px - port.x, py - port.y);
+      const insideBody = px >= node.x && px <= node.x + NODE_W && py >= node.y && py <= node.y + NODE_H;
+      if (distToPort <= PORT_HIT_RADIUS || insideBody) return node.kind;
+    }
+    return null;
+  }
+
+  function attachTubeAt(pieceId: string, px: number, py: number) {
+    const targetKind = findNodeAt(px, py);
+    if (!targetKind) return;
+    const result = onAttachTube(targetKind, pieceId);
+    if (!result.ok) showReject(targetKind, result.message ?? 'Collegamento non valido.');
+  }
+
+  // --- Riposizionamento libero di un nodo ---
   function startNodeDrag(e: React.PointerEvent, kind: ComponentKind) {
     e.stopPropagation();
+    if (selectedPiece && (selectedPiece.kind === 'tubo-hp' || selectedPiece.kind === 'tubo-bp')) {
+      const result = onAttachTube(kind, selectedPiece.id);
+      if (!result.ok) showReject(kind, result.message ?? 'Collegamento non valido.');
+      onPlacedSuccess();
+      return;
+    }
     const node = nodes[kind];
     if (!node) return;
-    dragRef.current = {
-      kind,
-      startPointerX: e.clientX,
-      startPointerY: e.clientY,
-      startNodeX: node.x,
-      startNodeY: node.y,
-    };
+    dragRef.current = { kind, startPointerX: e.clientX, startPointerY: e.clientY, startNodeX: node.x, startNodeY: node.y };
     window.addEventListener('pointermove', handleNodeDragMove);
     window.addEventListener('pointerup', endNodeDrag);
   }
@@ -104,6 +153,7 @@ export function CircuitCanvas({
     window.removeEventListener('pointerup', endNodeDrag);
   }
 
+  // --- Collegamento rapido porta -> componente (senza diametro predefinito) ---
   function startConnect(e: React.PointerEvent, from: ComponentKind) {
     e.stopPropagation();
     e.preventDefault();
@@ -128,18 +178,62 @@ export function CircuitCanvas({
     connectingRef.current = null;
     setConnecting(null);
     if (!cur) return;
-    for (const kind of Object.keys(nodes) as ComponentKind[]) {
-      const node = nodes[kind];
-      if (!node || kind === cur.from) continue;
-      if (p.x >= node.x && p.x <= node.x + NODE_W && p.y >= node.y && p.y <= node.y + NODE_H) {
-        onAddEdge(cur.from, kind);
-        break;
-      }
+    const target = findNodeAt(p.x, p.y);
+    if (target && target !== cur.from) onAddEdge(cur.from, target);
+  }
+
+  // --- Completamento di un tubo agganciato ma non ancora collegato (trascina l'estremità libera) ---
+  function startCompleteEdge(e: React.PointerEvent, edgeId: string, from: ComponentKind) {
+    e.stopPropagation();
+    e.preventDefault();
+    const p = toCanvasPoint(e.clientX, e.clientY);
+    completingRef.current = { edgeId, from, x: p.x, y: p.y };
+    setCompleting(completingRef.current);
+    window.addEventListener('pointermove', handleCompleteMove);
+    window.addEventListener('pointerup', handleCompleteEnd);
+  }
+
+  function handleCompleteMove(e: PointerEvent) {
+    const p = toCanvasPoint(e.clientX, e.clientY);
+    completingRef.current = completingRef.current ? { ...completingRef.current, x: p.x, y: p.y } : null;
+    setCompleting(completingRef.current);
+    if (completingRef.current) {
+      setLoosePositions((prev) => ({ ...prev, [completingRef.current!.edgeId]: { x: p.x, y: p.y } }));
     }
   }
 
+  function handleCompleteEnd(e: PointerEvent) {
+    window.removeEventListener('pointermove', handleCompleteMove);
+    window.removeEventListener('pointerup', handleCompleteEnd);
+    const p = toCanvasPoint(e.clientX, e.clientY);
+    const cur = completingRef.current;
+    completingRef.current = null;
+    setCompleting(null);
+    if (!cur) return;
+    const target = findNodeAt(p.x, p.y);
+    if (target && target !== cur.from) {
+      onCompleteEdge(cur.edgeId, target);
+      setLoosePositions((prev) => {
+        const next = { ...prev };
+        delete next[cur.edgeId];
+        return next;
+      });
+    }
+  }
+
+  function looseEndFor(edgeId: string, from: ComponentKind) {
+    const override = loosePositions[edgeId];
+    if (override) return override;
+    const fromNode = nodes[from];
+    if (!fromNode) return { x: 0, y: 0 };
+    const port = portPoint(fromNode);
+    return { x: Math.min(port.x + 70, CANVAS_W - 10), y: Math.min(port.y + 10, CANVAS_H - 10) };
+  }
+
+  // --- Piazzamento componenti / aggancio tubi da click-to-place o drag&drop nativo ---
   function handleCanvasClick(e: React.MouseEvent) {
     if (!selectedPiece) return;
+    if (selectedPiece.kind === 'tubo-hp' || selectedPiece.kind === 'tubo-bp' || selectedPiece.kind === 'fluido') return;
     if (e.target !== canvasRef.current && !(e.target as HTMLElement).classList.contains('canvas-grid')) return;
     const p = toCanvasPoint(e.clientX, e.clientY);
     const x = Math.min(Math.max(p.x - NODE_W / 2, 0), CANVAS_W - NODE_W);
@@ -156,13 +250,18 @@ export function CircuitCanvas({
     e.preventDefault();
     const pieceId = e.dataTransfer.getData('text/piece-id');
     if (!pieceId) return;
+    const piece = allPieces.find((p) => p.id === pieceId);
+    if (!piece) return;
     const p = toCanvasPoint(e.clientX, e.clientY);
+    if (piece.kind === 'tubo-hp' || piece.kind === 'tubo-bp') {
+      attachTubeAt(pieceId, p.x, p.y);
+      return;
+    }
+    if (piece.kind === 'fluido') return;
     const x = Math.min(Math.max(p.x - NODE_W / 2, 0), CANVAS_W - NODE_W);
     const y = Math.min(Math.max(p.y - NODE_H / 2, 0), CANVAS_H - NODE_H);
     onPlaceNode(pieceId, x, y);
   }
-
-  const nodeList = Object.values(nodes).filter(Boolean) as CanvasNode[];
 
   return (
     <div
@@ -178,7 +277,8 @@ export function CircuitCanvas({
       {nodeList.length === 0 && (
         <div className="canvas-empty-hint">
           Trascina qui i componenti dalla cassetta attrezzi, posizionali dove vuoi (anche in verticale), poi
-          disegna i tubi trascinando dal pallino in basso a destra di ciascun componente fino al componente successivo.
+          disegna i tubi trascinando dal pallino in basso a destra di ciascuno, oppure trascina direttamente un
+          pezzo di tubo dalla cassetta attrezzi sopra la porta del componente per agganciarlo lì.
         </div>
       )}
 
@@ -204,17 +304,34 @@ export function CircuitCanvas({
 
         {edgeEvaluations.map((ev) => {
           const fromNode = nodes[ev.edge.from];
-          const toNode = nodes[ev.edge.to];
-          if (!fromNode || !toNode) return null;
+          if (!fromNode) return null;
+
+          if (ev.status === 'pending') {
+            const loose = looseEndFor(ev.edge.id, ev.edge.from);
+            const c1 = nodeCenter(fromNode);
+            const p1 = clipToRect(c1.x, c1.y, NODE_W, NODE_H, loose.x, loose.y);
+            const isHP = ev.edge.from === 'compressore' || ev.edge.from === 'condensatore' || ev.edge.from === 'filtro' || ev.edge.from === 'voyant';
+            const color = isHP ? '#d64545' : '#3f7fd6';
+            const width = ev.edge.diametro ? DIAMETER_STROKE[ev.edge.diametro] : 4;
+            return (
+              <g key={ev.edge.id}>
+                <line x1={p1.x} y1={p1.y} x2={loose.x} y2={loose.y} stroke={color} strokeWidth={width} strokeLinecap="round" strokeDasharray="3 7" opacity={0.85} />
+              </g>
+            );
+          }
+
+          const toNode = ev.edge.to ? nodes[ev.edge.to] : null;
+          if (!toNode) return null;
           const c1 = nodeCenter(fromNode);
           const c2 = nodeCenter(toNode);
           const p1 = clipToRect(c1.x, c1.y, NODE_W, NODE_H, c2.x, c2.y);
           const p2 = clipToRect(c2.x, c2.y, NODE_W, NODE_H, c1.x, c1.y);
           const isWrong = ev.status === 'wrong';
           const isHP = ev.status === 'correct-hp';
-          const color = isWrong ? '#e0a83f' : isHP ? '#d64545' : '#3f7fd6';
+          const noDiametro = !isWrong && !ev.edge.diametro;
+          const color = isWrong ? '#e0a83f' : noDiametro ? '#7a8590' : isHP ? '#d64545' : '#3f7fd6';
           const marker = isWrong ? 'arrow-wrong' : isHP ? 'arrow-hp' : 'arrow-bp';
-          const width = isWrong ? 4 : DIAMETER_STROKE[(isHP ? diametroHP : diametroBP) ?? (isHP ? '3/8' : '1/2')];
+          const width = isWrong ? 4 : ev.edge.diametro ? DIAMETER_STROKE[ev.edge.diametro] : 3;
           const isActive = activeEdgeIds.has(ev.edge.id);
           const midX = (p1.x + p2.x) / 2;
           const midY = (p1.y + p2.y) / 2;
@@ -259,17 +376,47 @@ export function CircuitCanvas({
           const c1 = nodeCenter(nodes[connecting.from]!);
           const p1 = clipToRect(c1.x, c1.y, NODE_W, NODE_H, connecting.x, connecting.y);
           return (
-            <line
-              x1={p1.x} y1={p1.y} x2={connecting.x} y2={connecting.y}
-              stroke="#c9793f" strokeWidth="3" strokeDasharray="6 6" strokeLinecap="round"
-            />
+            <line x1={p1.x} y1={p1.y} x2={connecting.x} y2={connecting.y} stroke="#c9793f" strokeWidth="3" strokeDasharray="6 6" strokeLinecap="round" />
+          );
+        })()}
+
+        {completing && nodes[completing.from] && (() => {
+          const c1 = nodeCenter(nodes[completing.from]!);
+          const p1 = clipToRect(c1.x, c1.y, NODE_W, NODE_H, completing.x, completing.y);
+          return (
+            <line x1={p1.x} y1={p1.y} x2={completing.x} y2={completing.y} stroke="#c9793f" strokeWidth="3" strokeDasharray="6 6" strokeLinecap="round" />
           );
         })()}
       </svg>
 
       {edgeEvaluations.map((ev) => {
+        if (ev.status === 'pending') {
+          const fromNode = nodes[ev.edge.from];
+          if (!fromNode) return null;
+          const loose = looseEndFor(ev.edge.id, ev.edge.from);
+          return (
+            <div key={ev.edge.id}>
+              <div
+                className="pending-edge-handle"
+                style={{ left: loose.x - 11, top: loose.y - 11 }}
+                onPointerDown={(e) => startCompleteEdge(e, ev.edge.id, ev.edge.from)}
+                title="Trascina qui l'estremità libera del tubo fino al componente successivo"
+              />
+              <button
+                type="button"
+                className="edge-remove-btn"
+                style={{ left: loose.x + 14, top: loose.y - 24 }}
+                onPointerDown={(e) => e.stopPropagation()}
+                onClick={(e) => { e.stopPropagation(); onRemoveEdge(ev.edge.id); }}
+                title="Rimuovi questo tubo"
+              >
+                ×
+              </button>
+            </div>
+          );
+        }
         const fromNode = nodes[ev.edge.from];
-        const toNode = nodes[ev.edge.to];
+        const toNode = ev.edge.to ? nodes[ev.edge.to] : null;
         if (!fromNode || !toNode) return null;
         const c1 = nodeCenter(fromNode);
         const c2 = nodeCenter(toNode);
@@ -293,7 +440,7 @@ export function CircuitCanvas({
       {nodeList.map((node) => (
         <div
           key={node.kind}
-          className="canvas-node"
+          className={`canvas-node${rejectInfo?.kind === node.kind ? ' node-shake' : ''}`}
           style={{ left: node.x, top: node.y, width: NODE_W, height: NODE_H }}
           onPointerDown={(e) => startNodeDrag(e, node.kind)}
         >
@@ -308,11 +455,16 @@ export function CircuitCanvas({
           </button>
           <div className="node-icon">{pieceIcon(node.piece)}</div>
           <div className="node-label">{node.piece.label}</div>
-          <div
-            className="node-port"
-            onPointerDown={(e) => startConnect(e, node.kind)}
-            title="Trascina da qui per disegnare il tubo verso il componente successivo"
-          />
+          {node.piece.kind !== 'silenziatore' && (
+            <div
+              className="node-port"
+              onPointerDown={(e) => startConnect(e, node.kind)}
+              title="Trascina da qui per collegare, oppure trascina qui un tubo dalla cassetta attrezzi"
+            />
+          )}
+          {rejectInfo?.kind === node.kind && (
+            <div className="node-reject-msg">{rejectInfo.message}</div>
+          )}
         </div>
       ))}
     </div>

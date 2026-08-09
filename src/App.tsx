@@ -16,6 +16,7 @@ import {
 import { COMPRESSOR_POWER, PLANT_TYPES, diameterGuideFor, type PlantTypeId } from './data/plantTypes';
 import { TEMP_RANGE, saturationBarAssoluti } from './data/refrigerants';
 import {
+  canAttachTube,
   canPlaceAux,
   selectedFluid,
   validateCircuit,
@@ -106,14 +107,39 @@ function App() {
 
   function handleAddEdge(from: ComponentKind, to: ComponentKind) {
     setEdges((prev) => {
+      const existing = prev.find((e) => e.from === from);
       const withoutSameSource = prev.filter((e) => e.from !== from);
       const id = `${from}__${to}__${edgeCounter.current++}`;
-      return [...withoutSameSource, { id, from, to }];
+      return [...withoutSameSource, { id, from, to, diametro: existing?.diametro }];
     });
+  }
+
+  function handleCompleteEdge(edgeId: string, to: ComponentKind) {
+    setEdges((prev) => prev.map((e) => (e.id === edgeId ? { ...e, to } : e)));
   }
 
   function handleRemoveEdge(id: string) {
     setEdges((prev) => prev.filter((e) => e.id !== id));
+  }
+
+  function handleAttachTube(nodeKind: ComponentKind, pieceId: string) {
+    const piece = allPieces.find((p) => p.id === pieceId);
+    if (!piece || (piece.kind !== 'tubo-hp' && piece.kind !== 'tubo-bp')) {
+      return { ok: false, message: 'Componente non riconosciuto.' };
+    }
+    const check = canAttachTube(nodeKind, piece.kind);
+    if (!check.ok) return check;
+    setEdges((prev) => {
+      const idx = prev.findIndex((e) => e.from === nodeKind);
+      if (idx >= 0) {
+        const next = [...prev];
+        next[idx] = { ...next[idx], diametro: piece.diametro };
+        return next;
+      }
+      const id = `${nodeKind}__pending__${edgeCounter.current++}`;
+      return [...prev, { id, from: nodeKind, to: null, diametro: piece.diametro }];
+    });
+    return { ok: true };
   }
 
   function handleDropAux(slotId: ComponentKind, pieceId: string) {
@@ -137,9 +163,6 @@ function App() {
   const bpBar = fluid ? saturationBarAssoluti(fluid, tempEvap) : null;
   const gaugesLive = simulationRunning && validation.isFullyCorrect;
   const flowActive = simulationRunning && validation.sequenceComplete;
-
-  const diametroHP = auxPlaced['tubo-hp']?.diametro ?? null;
-  const diametroBP = auxPlaced['tubo-bp']?.diametro ?? null;
 
   return (
     <div className="app-shell">
@@ -170,7 +193,7 @@ function App() {
             </p>
           )}
 
-          <h2 className="panel-title">Diametri e fluido</h2>
+          <h2 className="panel-title">Fluido frigorigeno</h2>
           <div className="aux-slots-row">
             {AUX_SLOTS.map((s) => (
               <Slot
@@ -194,7 +217,8 @@ function App() {
             &nbsp;· BP {diameterGuide.bp.join(', ')}".
             <br />
             <span className="panel-hint-muted">
-              Guida didattica semplificata, non un calcolo reale di perdita di carico.
+              Guida didattica semplificata, non un calcolo reale di perdita di carico. I diametri si assegnano
+              trascinando un pezzo di tubo dalla cassetta attrezzi sulla porta del componente da cui parte quel tratto.
             </span>
           </p>
 
@@ -252,14 +276,15 @@ function App() {
               activeEdgeIds={validation.activeEdgeIds}
               simulationRunning={flowActive}
               flowOk={validation.isFullyCorrect}
-              diametroHP={diametroHP}
-              diametroBP={diametroBP}
+              allPieces={allPieces}
               selectedPiece={selectedPiece}
               onPlaceNode={handlePlaceNode}
               onMoveNode={handleMoveNode}
               onRemoveNode={handleRemoveNode}
               onAddEdge={handleAddEdge}
+              onCompleteEdge={handleCompleteEdge}
               onRemoveEdge={handleRemoveEdge}
+              onAttachTube={handleAttachTube}
               onPlacedSuccess={() => setSelectedPieceId(null)}
             />
           </div>

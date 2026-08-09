@@ -344,6 +344,49 @@
   border-color: var(--err-red);
 }
 
+/* Estremità libera di un tubo agganciato ma non ancora collegato */
+.pending-edge-handle {
+  position: absolute;
+  z-index: 4;
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  background: var(--copper);
+  border: 3px solid var(--graphite-0);
+  cursor: crosshair;
+  touch-action: none;
+  animation: pending-pulse 1.4s ease-in-out infinite;
+}
+@keyframes pending-pulse {
+  0%, 100% { box-shadow: 0 0 0 0 rgba(201, 121, 63, 0.45); }
+  50% { box-shadow: 0 0 0 7px rgba(201, 121, 63, 0); }
+}
+@media (prefers-reduced-motion: reduce) {
+  .pending-edge-handle { animation: none; }
+}
+
+.node-shake {
+  animation: shake 0.42s ease;
+}
+
+.node-reject-msg {
+  position: absolute;
+  z-index: 6;
+  top: 100%;
+  left: 50%;
+  transform: translateX(-50%);
+  margin-top: 8px;
+  width: max-content;
+  max-width: 220px;
+  background: var(--err-red);
+  color: #2a0808;
+  font-size: 11px;
+  line-height: 1.4;
+  padding: 7px 10px;
+  border-radius: 6px;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.4);
+}
+
 /* Aux slots (tube diameter / fluid) — compact fixed-size drop targets */
 .aux-slots-row {
   display: flex;
