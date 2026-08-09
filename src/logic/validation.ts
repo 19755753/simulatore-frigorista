@@ -1,5 +1,6 @@
-import { CIRCUIT_SLOTS, type ComponentKind, type ToolboxPiece } from '../data/components';
-import { diameterGuideFor, type PowerCategory, type TubeDiameter } from '../data/plantTypes';
+import { AUX_SLOTS, CIRCUIT_SLOTS, type ComponentKind, type ToolboxPiece } from '../data/components';
+import { diameterGuideFor, type PowerCategory } from '../data/plantTypes';
+import type { RefrigerantId } from '../data/refrigerants';
 
 export type PlacedPieces = Partial<Record<ComponentKind, ToolboxPiece>>;
 
@@ -9,7 +10,7 @@ export interface DropCheck {
 }
 
 const SLOT_LABEL: Record<ComponentKind, string> = Object.fromEntries(
-  CIRCUIT_SLOTS.map((s) => [s.id, s.label]),
+  [...CIRCUIT_SLOTS, ...AUX_SLOTS].map((s) => [s.id, s.label]),
 ) as Record<ComponentKind, string>;
 
 /** Verifica se un pezzo può essere posato in uno slot. Rifiuta il drop se non coerente. */
@@ -43,6 +44,7 @@ export interface CircuitValidation {
   blockedSlotIndex: number | null; // indice (0-based) del primo slot vuoto: qui il flusso si blocca
   sequenceComplete: boolean;
   diameterOk: boolean;
+  fluidOk: boolean;
   temperatureOk: boolean;
   isFullyCorrect: boolean;
   messages: ValidationMessage[];
@@ -51,12 +53,10 @@ export interface CircuitValidation {
 export function validateCircuit(params: {
   placed: PlacedPieces;
   potenza: PowerCategory;
-  diametroHP: TubeDiameter | null;
-  diametroBP: TubeDiameter | null;
   tempEvap: number;
   tempCond: number;
 }): CircuitValidation {
-  const { placed, potenza, diametroHP, diametroBP, tempEvap, tempCond } = params;
+  const { placed, potenza, tempEvap, tempCond } = params;
   const messages: ValidationMessage[] = [];
 
   let blockedSlotIndex: number | null = null;
@@ -74,6 +74,9 @@ export function validateCircuit(params: {
     });
   }
 
+  const diametroHP = placed['tubo-hp']?.diametro ?? null;
+  const diametroBP = placed['tubo-bp']?.diametro ?? null;
+
   const guide = diameterGuideFor(potenza);
   const diameterOk = !!diametroHP && !!diametroBP && guide.hp.includes(diametroHP) && guide.bp.includes(diametroBP);
   if (diametroHP && !guide.hp.includes(diametroHP)) {
@@ -89,7 +92,12 @@ export function validateCircuit(params: {
     });
   }
   if (!diametroHP || !diametroBP) {
-    messages.push({ level: 'warning', text: 'Seleziona i diametri dei tubi HP e BP per completare il montaggio.' });
+    messages.push({ level: 'warning', text: 'Trascina i tubi con il diametro scelto sulle linee HP e BP per completare il montaggio.' });
+  }
+
+  const fluidOk = !!placed.fluido;
+  if (!fluidOk) {
+    messages.push({ level: 'warning', text: 'Trascina la bombola del fluido frigorigeno nello slot dedicato per caricare l\'impianto.' });
   }
 
   const temperatureOk = tempEvap < tempCond;
@@ -100,7 +108,11 @@ export function validateCircuit(params: {
     });
   }
 
-  const isFullyCorrect = sequenceComplete && diameterOk && temperatureOk;
+  const isFullyCorrect = sequenceComplete && diameterOk && fluidOk && temperatureOk;
 
-  return { blockedSlotIndex, sequenceComplete, diameterOk, temperatureOk, isFullyCorrect, messages };
+  return { blockedSlotIndex, sequenceComplete, diameterOk, fluidOk, temperatureOk, isFullyCorrect, messages };
+}
+
+export function selectedFluid(placed: PlacedPieces): RefrigerantId | null {
+  return placed.fluido?.fluido ?? null;
 }

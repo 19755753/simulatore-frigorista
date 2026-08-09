@@ -77,3 +77,7 @@ export const BP_DIAMETERS: TubeDiameter[] = ['3/8', '1/2', '5/8', '3/4', '7/8'];
 export function diameterGuideFor(potenza: PowerCategory): DiameterGuide {
   return DIAMETER_GUIDE.find((g) => g.potenza === potenza)!;
 }
+
+export const DIAMETER_STROKE: Record<TubeDiameter, number> = {
+  '1/4': 3, '3/8': 4.5, '1/2': 6, '5/8': 7.5, '3/4': 9, '7/8': 10.5,
+};

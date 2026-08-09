@@ -1,4 +1,5 @@
-import type { CompressorVariant } from '../data/plantTypes';
+import { DIAMETER_STROKE, type CompressorVariant, type TubeDiameter } from '../data/plantTypes';
+import { REFRIGERANTS, type RefrigerantId } from '../data/refrigerants';
 
 /**
  * Disegni SVG stilizzati (schematico tecnico, non fotorealistico) per i componenti
@@ -173,6 +174,37 @@ export function TubeSampleSvg({ color }: { color: 'hp' | 'bp' }) {
   return (
     <svg viewBox="0 0 160 40" className="piece-svg-tube" role="img" aria-label={color === 'hp' ? 'Tubo linea liquido' : 'Tubo aspirazione'}>
       <line x1="8" y1="20" x2="152" y2="20" stroke={stroke} strokeWidth="7" strokeLinecap="round" />
+    </svg>
+  );
+}
+
+export function TubePieceSvg({ kind, diametro }: { kind: 'tubo-hp' | 'tubo-bp'; diametro: TubeDiameter }) {
+  const stroke = kind === 'tubo-hp' ? HP_RED : BP_BLUE;
+  const width = DIAMETER_STROKE[diametro];
+  return (
+    <svg viewBox="0 0 160 70" className="piece-svg" role="img" aria-label={`Tubo ${kind === 'tubo-hp' ? 'HP' : 'BP'} ${diametro} pollici`}>
+      <line x1="14" y1="30" x2="146" y2="30" stroke={stroke} strokeWidth={width} strokeLinecap="round" />
+      <text x="80" y="58" textAnchor="middle" className="piece-label" fontSize="12" fontWeight="700">{diametro}"</text>
+    </svg>
+  );
+}
+
+const CYLINDER_LABEL_COLOR: Record<RefrigerantId, string> = {
+  R32: '#5fb0a0',
+  R410A: '#d97fae',
+  R404A: '#e0a83f',
+};
+
+export function FluidCylinderSvg({ fluido }: { fluido: RefrigerantId }) {
+  const band = CYLINDER_LABEL_COLOR[fluido];
+  return (
+    <svg viewBox="0 0 160 110" className="piece-svg" role="img" aria-label={`Bombola ${REFRIGERANTS[fluido].label}`}>
+      <path d="M64 26 h32 v-10 h-32 z" fill={METAL_DARK} />
+      <rect x="52" y="26" width="56" height="72" rx="10" fill={GRAPHITE} stroke={METAL} strokeWidth="2" />
+      <rect x="52" y="46" width="56" height="20" fill={band} opacity="0.85" />
+      <text x="80" y="60" textAnchor="middle" fontSize="11" fontWeight="700" fill="#14181b">{fluido}</text>
+      <circle cx="80" cy="20" r="5" fill={METAL} />
+      <text x="80" y="108" textAnchor="middle" className="piece-label">Bombola {fluido}</text>
     </svg>
   );
 }

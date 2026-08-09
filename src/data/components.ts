@@ -1,4 +1,6 @@
-import type { CompressorVariant } from './plantTypes';
+import type { CompressorVariant, TubeDiameter } from './plantTypes';
+import { REFRIGERANTS, type RefrigerantId } from './refrigerants';
+import { BP_DIAMETERS, HP_DIAMETERS } from './plantTypes';
 
 export type ComponentKind =
   | 'compressore'
@@ -7,12 +9,17 @@ export type ComponentKind =
   | 'voyant'
   | 'detendeur'
   | 'evaporatore'
-  | 'silenziatore';
+  | 'silenziatore'
+  | 'tubo-hp'
+  | 'tubo-bp'
+  | 'fluido';
 
 export interface ToolboxPiece {
   id: string;
   kind: ComponentKind;
   variant?: CompressorVariant;
+  diametro?: TubeDiameter;
+  fluido?: RefrigerantId;
   label: string;
   descrizioneBreve: string;
 }
@@ -25,6 +32,13 @@ export const CIRCUIT_SLOTS: { id: ComponentKind; label: string; aiuto: string }[
   { id: 'voyant', label: 'Voyant liquide (spia liquido)', aiuto: 'Permette di vedere se il liquido è privo di bolle. Va montato DOPO il filtro, mai prima.' },
   { id: 'detendeur', label: 'Détendeur (valvola d\'espansione)', aiuto: 'Lamina il liquido riducendone pressione e temperatura prima dell\'evaporatore.' },
   { id: 'evaporatore', label: 'Evaporatore', aiuto: 'Il liquido a bassa pressione assorbe calore dall\'ambiente ed evapora.' },
+];
+
+/** Slot ausiliari: non fanno parte della sequenza di montaggio ma richiedono comunque un drag&drop. */
+export const AUX_SLOTS: { id: ComponentKind; label: string; compactLabel: string; aiuto: string }[] = [
+  { id: 'tubo-hp', label: 'Diametro linea liquido (HP)', compactLabel: 'Tubo HP', aiuto: 'Trascina qui il tubo con il diametro scelto per la linea alta pressione.' },
+  { id: 'tubo-bp', label: 'Diametro aspirazione (BP)', compactLabel: 'Tubo BP', aiuto: 'Trascina qui il tubo con il diametro scelto per la linea bassa pressione.' },
+  { id: 'fluido', label: 'Fluido frigorigeno', compactLabel: 'Fluido frigorigeno', aiuto: 'Trascina qui la bombola del fluido frigorigeno da caricare nell\'impianto.' },
 ];
 
 export function toolboxForCompressors(compressori: CompressorVariant[]): ToolboxPiece[] {
@@ -60,3 +74,33 @@ export const SILENZIATORE_PIECE: ToolboxPiece = {
   label: 'Silenziatore mandata (opzionale)',
   descrizioneBreve: 'Si monta sulla linea di mandata, tra compressore e condensatore. Facoltativo.',
 };
+
+export function toolboxTubesHP(): ToolboxPiece[] {
+  return HP_DIAMETERS.map((d) => ({
+    id: `tubo-hp-${d}`,
+    kind: 'tubo-hp',
+    diametro: d,
+    label: `Tubo HP ${d}"`,
+    descrizioneBreve: `Trascina sulla linea liquido (HP) se ${d}" è il diametro scelto.`,
+  }));
+}
+
+export function toolboxTubesBP(): ToolboxPiece[] {
+  return BP_DIAMETERS.map((d) => ({
+    id: `tubo-bp-${d}`,
+    kind: 'tubo-bp',
+    diametro: d,
+    label: `Tubo BP ${d}"`,
+    descrizioneBreve: `Trascina sulla linea aspirazione (BP) se ${d}" è il diametro scelto.`,
+  }));
+}
+
+export function toolboxFluids(fluidi: RefrigerantId[]): ToolboxPiece[] {
+  return fluidi.map((f) => ({
+    id: `fluido-${f}`,
+    kind: 'fluido',
+    fluido: f,
+    label: `Bombola ${REFRIGERANTS[f].label}`,
+    descrizioneBreve: REFRIGERANTS[f].note,
+  }));
+}

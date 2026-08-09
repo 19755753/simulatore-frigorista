@@ -131,6 +131,21 @@
   padding: 16px;
 }
 
+.toolbox-section + .toolbox-section {
+  margin-top: 16px;
+  padding-top: 14px;
+  border-top: 1px solid var(--border);
+}
+
+.toolbox-section-title {
+  margin: 0;
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  color: var(--text-muted);
+  font-weight: 700;
+}
+
 .toolbox-grid {
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(120px, 1fr));
@@ -263,6 +278,22 @@
   color: var(--text-muted);
   text-align: center;
   margin-bottom: 2px;
+}
+
+.slot-aux {
+  border-color: var(--copper-dark);
+  background: rgba(201, 121, 63, 0.08);
+}
+.slot-aux.slot-filled {
+  background: var(--graphite-3);
+  border-color: var(--copper);
+}
+.slot-aux .slot-label {
+  font-size: 10px;
+  color: var(--copper);
+}
+.slot-aux .slot-placeholder {
+  font-size: 10px;
 }
 .slot-body {
   flex: 1;

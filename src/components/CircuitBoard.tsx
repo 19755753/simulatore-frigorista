@@ -1,22 +1,27 @@
-import { CIRCUIT_SLOTS, type ComponentKind, type ToolboxPiece } from '../data/components';
-import type { TubeDiameter } from '../data/plantTypes';
+import { AUX_SLOTS, CIRCUIT_SLOTS, type ComponentKind, type ToolboxPiece } from '../data/components';
+import { DIAMETER_STROKE } from '../data/plantTypes';
 import { Slot } from './Slot';
 
 const BOX_W = 176;
 const BOX_H = 116;
 
-const SLOT_POS: Record<ComponentKind, { x: number; y: number }> = {
-  compressore: { x: 20, y: 40 },
-  condensatore: { x: 330, y: 40 },
-  filtro: { x: 640, y: 40 },
-  voyant: { x: 640, y: 330 },
-  detendeur: { x: 330, y: 330 },
-  evaporatore: { x: 20, y: 330 },
-  silenziatore: { x: 0, y: 0 },
+const SLOT_POS: Record<ComponentKind, { x: number; y: number; w: number; h: number }> = {
+  compressore: { x: 20, y: 40, w: BOX_W, h: BOX_H },
+  condensatore: { x: 330, y: 40, w: BOX_W, h: BOX_H },
+  filtro: { x: 640, y: 40, w: BOX_W, h: BOX_H },
+  voyant: { x: 640, y: 330, w: BOX_W, h: BOX_H },
+  detendeur: { x: 330, y: 330, w: BOX_W, h: BOX_H },
+  evaporatore: { x: 20, y: 330, w: BOX_W, h: BOX_H },
+  silenziatore: { x: 0, y: 0, w: BOX_W, h: BOX_H },
+  'tubo-hp': { x: 530, y: 74, w: 110, h: 50 },
+  'tubo-bp': { x: 210, y: 364, w: 110, h: 50 },
+  fluido: { x: 350, y: 190, w: 200, h: 110 },
 };
 
-const centerY = (y: number) => y + BOX_H / 2;
-const centerX = (x: number) => x + BOX_W / 2;
+const centerY = (id: ComponentKind) => SLOT_POS[id].y + SLOT_POS[id].h / 2;
+const centerX = (id: ComponentKind) => SLOT_POS[id].x + SLOT_POS[id].w / 2;
+const rightX = (id: ComponentKind) => SLOT_POS[id].x + SLOT_POS[id].w;
+const bottomY = (id: ComponentKind) => SLOT_POS[id].y + SLOT_POS[id].h;
 
 interface Segment {
   x1: number; y1: number; x2: number; y2: number;
@@ -24,25 +29,19 @@ interface Segment {
 }
 
 const SEGMENTS: Segment[] = [
-  { x1: SLOT_POS.compressore.x + BOX_W, y1: centerY(SLOT_POS.compressore.y), x2: SLOT_POS.condensatore.x, y2: centerY(SLOT_POS.condensatore.y), kind: 'HP' },
-  { x1: SLOT_POS.condensatore.x + BOX_W, y1: centerY(SLOT_POS.condensatore.y), x2: SLOT_POS.filtro.x, y2: centerY(SLOT_POS.filtro.y), kind: 'HP' },
-  { x1: centerX(SLOT_POS.filtro.x), y1: SLOT_POS.filtro.y + BOX_H, x2: centerX(SLOT_POS.voyant.x), y2: SLOT_POS.voyant.y, kind: 'HP' },
-  { x1: SLOT_POS.voyant.x, y1: centerY(SLOT_POS.voyant.y), x2: SLOT_POS.detendeur.x + BOX_W, y2: centerY(SLOT_POS.detendeur.y), kind: 'HP' },
-  { x1: SLOT_POS.detendeur.x, y1: centerY(SLOT_POS.detendeur.y), x2: SLOT_POS.evaporatore.x + BOX_W, y2: centerY(SLOT_POS.evaporatore.y), kind: 'BP' },
-  { x1: centerX(SLOT_POS.evaporatore.x), y1: SLOT_POS.evaporatore.y, x2: centerX(SLOT_POS.compressore.x), y2: SLOT_POS.compressore.y + BOX_H, kind: 'BP' },
+  { x1: rightX('compressore'), y1: centerY('compressore'), x2: SLOT_POS.condensatore.x, y2: centerY('condensatore'), kind: 'HP' },
+  { x1: rightX('condensatore'), y1: centerY('condensatore'), x2: SLOT_POS.filtro.x, y2: centerY('filtro'), kind: 'HP' },
+  { x1: centerX('filtro'), y1: bottomY('filtro'), x2: centerX('voyant'), y2: SLOT_POS.voyant.y, kind: 'HP' },
+  { x1: SLOT_POS.voyant.x, y1: centerY('voyant'), x2: rightX('detendeur'), y2: centerY('detendeur'), kind: 'HP' },
+  { x1: SLOT_POS.detendeur.x, y1: centerY('detendeur'), x2: rightX('evaporatore'), y2: centerY('evaporatore'), kind: 'BP' },
+  { x1: centerX('evaporatore'), y1: SLOT_POS.evaporatore.y, x2: centerX('compressore'), y2: bottomY('compressore'), kind: 'BP' },
 ];
-
-const DIAMETER_STROKE: Record<TubeDiameter, number> = {
-  '1/4': 3, '3/8': 4.5, '1/2': 6, '5/8': 7.5, '3/4': 9, '7/8': 10.5,
-};
 
 interface CircuitBoardProps {
   placed: Partial<Record<ComponentKind, ToolboxPiece>>;
   blockedSlotIndex: number | null;
   flowActive: boolean;
   flowOk: boolean;
-  diametroHP: TubeDiameter | null;
-  diametroBP: TubeDiameter | null;
   selectedPiece: ToolboxPiece | null;
   onDropPiece: (slotId: ComponentKind, pieceId: string) => { ok: boolean; message?: string };
   onPlacedSuccess: () => void;
@@ -50,9 +49,11 @@ interface CircuitBoardProps {
 }
 
 export function CircuitBoard({
-  placed, blockedSlotIndex, flowActive, flowOk, diametroHP, diametroBP, selectedPiece, onDropPiece, onPlacedSuccess, onRemove,
+  placed, blockedSlotIndex, flowActive, flowOk, selectedPiece, onDropPiece, onPlacedSuccess, onRemove,
 }: CircuitBoardProps) {
   const activeSegmentCount = blockedSlotIndex === null ? SEGMENTS.length : Math.max(0, blockedSlotIndex);
+  const diametroHP = placed['tubo-hp']?.diametro ?? null;
+  const diametroBP = placed['tubo-bp']?.diametro ?? null;
 
   return (
     <div className="circuit-board-wrap">
@@ -88,11 +89,28 @@ export function CircuitBoard({
             aiuto={slotDef.aiuto}
             piece={placed[slotDef.id] ?? null}
             isBlocked={blockedSlotIndex === i}
-            style={{ left: SLOT_POS[slotDef.id].x, top: SLOT_POS[slotDef.id].y, width: BOX_W, height: BOX_H }}
+            style={{ left: SLOT_POS[slotDef.id].x, top: SLOT_POS[slotDef.id].y, width: SLOT_POS[slotDef.id].w, height: SLOT_POS[slotDef.id].h }}
             selectedPiece={selectedPiece}
             onDropPiece={onDropPiece}
             onPlacedSuccess={onPlacedSuccess}
             onRemove={onRemove}
+          />
+        ))}
+        {AUX_SLOTS.map((slotDef) => (
+          <Slot
+            key={slotDef.id}
+            id={slotDef.id}
+            label={slotDef.label}
+            displayLabel={slotDef.compactLabel}
+            aiuto={slotDef.aiuto}
+            piece={placed[slotDef.id] ?? null}
+            isBlocked={false}
+            style={{ left: SLOT_POS[slotDef.id].x, top: SLOT_POS[slotDef.id].y, width: SLOT_POS[slotDef.id].w, height: SLOT_POS[slotDef.id].h }}
+            selectedPiece={selectedPiece}
+            onDropPiece={onDropPiece}
+            onPlacedSuccess={onPlacedSuccess}
+            onRemove={onRemove}
+            variant="aux"
           />
         ))}
       </div>

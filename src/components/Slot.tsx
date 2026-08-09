@@ -5,6 +5,7 @@ import { pieceIcon } from './Toolbox';
 interface SlotProps {
   id: ComponentKind;
   label: string;
+  displayLabel?: string;
   aiuto: string;
   piece: ToolboxPiece | null;
   isBlocked: boolean;
@@ -13,9 +14,10 @@ interface SlotProps {
   onDropPiece: (slotId: ComponentKind, pieceId: string) => { ok: boolean; message?: string };
   onPlacedSuccess: () => void;
   onRemove: (slotId: ComponentKind) => void;
+  variant?: 'main' | 'aux';
 }
 
-export function Slot({ id, label, aiuto, piece, isBlocked, style, selectedPiece, onDropPiece, onPlacedSuccess, onRemove }: SlotProps) {
+export function Slot({ id, label, displayLabel, aiuto, piece, isBlocked, style, selectedPiece, onDropPiece, onPlacedSuccess, onRemove, variant = 'main' }: SlotProps) {
   const [rejectMessage, setRejectMessage] = useState<string | null>(null);
   const [shaking, setShaking] = useState(false);
   const [dragOver, setDragOver] = useState(false);
@@ -53,6 +55,7 @@ export function Slot({ id, label, aiuto, piece, isBlocked, style, selectedPiece,
     <div
       className={[
         'slot',
+        variant === 'aux' ? 'slot-aux' : '',
         piece ? 'slot-filled' : 'slot-empty',
         isBlocked ? 'slot-blocked' : '',
         shaking ? 'slot-shake' : '',
@@ -65,7 +68,7 @@ export function Slot({ id, label, aiuto, piece, isBlocked, style, selectedPiece,
       onClick={handleClick}
       title={aiuto}
     >
-      <div className="slot-label">{label}</div>
+      <div className="slot-label">{displayLabel ?? label}</div>
       <div className="slot-body">
         {piece ? pieceIcon(piece) : <div className="slot-placeholder">Trascina qui</div>}
       </div>
