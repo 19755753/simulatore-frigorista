@@ -8,7 +8,6 @@ interface SlotProps {
   displayLabel?: string;
   aiuto: string;
   piece: ToolboxPiece | null;
-  isBlocked: boolean;
   style: React.CSSProperties;
   selectedPiece: ToolboxPiece | null;
   onDropPiece: (slotId: ComponentKind, pieceId: string) => { ok: boolean; message?: string };
@@ -17,7 +16,7 @@ interface SlotProps {
   variant?: 'main' | 'aux';
 }
 
-export function Slot({ id, label, displayLabel, aiuto, piece, isBlocked, style, selectedPiece, onDropPiece, onPlacedSuccess, onRemove, variant = 'main' }: SlotProps) {
+export function Slot({ id, label, displayLabel, aiuto, piece, style, selectedPiece, onDropPiece, onPlacedSuccess, onRemove, variant = 'main' }: SlotProps) {
   const [rejectMessage, setRejectMessage] = useState<string | null>(null);
   const [shaking, setShaking] = useState(false);
   const [dragOver, setDragOver] = useState(false);
@@ -57,7 +56,6 @@ export function Slot({ id, label, displayLabel, aiuto, piece, isBlocked, style, 
         'slot',
         variant === 'aux' ? 'slot-aux' : '',
         piece ? 'slot-filled' : 'slot-empty',
-        isBlocked ? 'slot-blocked' : '',
         shaking ? 'slot-shake' : '',
         dragOver ? 'slot-dragover' : '',
       ].filter(Boolean).join(' ')}
@@ -72,7 +70,6 @@ export function Slot({ id, label, displayLabel, aiuto, piece, isBlocked, style, 
       <div className="slot-body">
         {piece ? pieceIcon(piece) : <div className="slot-placeholder">Trascina qui</div>}
       </div>
-      {isBlocked && <div className="slot-blocked-badge">flusso bloccato qui</div>}
       {rejectMessage && <div className="slot-reject-msg">{rejectMessage}</div>}
     </div>
   );

@@ -1,9 +1,11 @@
-import { useMemo, useState } from 'react';
+import { useMemo, useRef, useState } from 'react';
 import './App.css';
-import { CircuitBoard } from './components/CircuitBoard';
+import { CircuitCanvas } from './components/CircuitCanvas';
+import { Slot } from './components/Slot';
 import { Toolbox, type ToolboxSection } from './components/Toolbox';
 import { Gauge } from './components/Gauge';
 import {
+  AUX_SLOTS,
   SILENZIATORE_PIECE,
   toolboxForCompressors,
   toolboxFluids,
@@ -13,7 +15,15 @@ import {
 } from './data/components';
 import { COMPRESSOR_POWER, PLANT_TYPES, diameterGuideFor, type PlantTypeId } from './data/plantTypes';
 import { TEMP_RANGE, saturationBarAssoluti } from './data/refrigerants';
-import { canPlacePiece, selectedFluid, validateCircuit, type PlacedPieces } from './logic/validation';
+import {
+  canPlaceAux,
+  selectedFluid,
+  validateCircuit,
+  type CanvasNode,
+  type PlacedNodes,
+  type PlacedPieces,
+  type WireEdge,
+} from './logic/validation';
 
 const tempOptions: number[] = [];
 for (let t = TEMP_RANGE.min; t <= TEMP_RANGE.max; t += TEMP_RANGE.step) tempOptions.push(t);
@@ -22,36 +32,42 @@ function App() {
   const [plantTypeId, setPlantTypeId] = useState<PlantTypeId>('climatizzatore');
   const plantType = PLANT_TYPES[plantTypeId];
 
-  const [placed, setPlaced] = useState<PlacedPieces>({});
+  const [nodes, setNodes] = useState<PlacedNodes>({});
+  const [edges, setEdges] = useState<WireEdge[]>([]);
+  const [auxPlaced, setAuxPlaced] = useState<PlacedPieces>({});
   const [selectedPieceId, setSelectedPieceId] = useState<string | null>(null);
   const [tempEvap, setTempEvap] = useState<number>(-10);
   const [tempCond, setTempCond] = useState<number>(40);
+  const [simulationRunning, setSimulationRunning] = useState(false);
+  const edgeCounter = useRef(0);
 
   const toolboxSections: ToolboxSection[] = useMemo(() => {
     const componenti = toolboxForCompressors(plantType.compressoriDisponibili);
     if (plantType.hasSilenziatoreOpzionale) componenti.push(SILENZIATORE_PIECE);
-    const sections: ToolboxSection[] = [
+    return [
       { title: 'Componenti circuito', pieces: componenti },
       { title: 'Diametri tubo', pieces: [...toolboxTubesHP(), ...toolboxTubesBP()] },
       { title: 'Fluido frigorigeno', pieces: toolboxFluids(plantType.fluidiDisponibili) },
     ];
-    return sections;
   }, [plantType]);
 
   const allPieces = useMemo(() => toolboxSections.flatMap((s) => s.pieces), [toolboxSections]);
-
   const selectedPiece = allPieces.find((p) => p.id === selectedPieceId) ?? null;
 
-  const usedKinds = useMemo(() => new Set(Object.keys(placed) as ComponentKind[]), [placed]);
+  const usedKinds = useMemo(
+    () => new Set([...Object.keys(nodes), ...Object.keys(auxPlaced)] as ComponentKind[]),
+    [nodes, auxPlaced],
+  );
 
-  const effectivePotenza = placed.compressore?.variant
-    ? COMPRESSOR_POWER[placed.compressore.variant]
+  const effectivePotenza = nodes.compressore?.piece.variant
+    ? COMPRESSOR_POWER[nodes.compressore.piece.variant]
     : plantType.potenza;
-
   const diameterGuide = diameterGuideFor(effectivePotenza);
 
   const validation = validateCircuit({
-    placed,
+    nodes,
+    edges,
+    auxPlaced,
     potenza: effectivePotenza,
     tempEvap,
     tempCond,
@@ -59,32 +75,71 @@ function App() {
 
   function handlePlantTypeChange(id: PlantTypeId) {
     setPlantTypeId(id);
-    setPlaced({});
+    setNodes({});
+    setEdges([]);
+    setAuxPlaced({});
     setSelectedPieceId(null);
+    setSimulationRunning(false);
   }
 
-  function handleDropPiece(slotId: ComponentKind, pieceId: string) {
+  function handlePlaceNode(pieceId: string, x: number, y: number) {
+    const piece = allPieces.find((p) => p.id === pieceId);
+    if (!piece) return;
+    if (piece.kind === 'tubo-hp' || piece.kind === 'tubo-bp' || piece.kind === 'fluido') return;
+    if (nodes[piece.kind]) return;
+    const node: CanvasNode = { kind: piece.kind, piece, x, y };
+    setNodes((prev) => ({ ...prev, [piece.kind]: node }));
+  }
+
+  function handleMoveNode(kind: ComponentKind, x: number, y: number) {
+    setNodes((prev) => (prev[kind] ? { ...prev, [kind]: { ...prev[kind]!, x, y } } : prev));
+  }
+
+  function handleRemoveNode(kind: ComponentKind) {
+    setNodes((prev) => {
+      const next = { ...prev };
+      delete next[kind];
+      return next;
+    });
+    setEdges((prev) => prev.filter((e) => e.from !== kind && e.to !== kind));
+  }
+
+  function handleAddEdge(from: ComponentKind, to: ComponentKind) {
+    setEdges((prev) => {
+      const withoutSameSource = prev.filter((e) => e.from !== from);
+      const id = `${from}__${to}__${edgeCounter.current++}`;
+      return [...withoutSameSource, { id, from, to }];
+    });
+  }
+
+  function handleRemoveEdge(id: string) {
+    setEdges((prev) => prev.filter((e) => e.id !== id));
+  }
+
+  function handleDropAux(slotId: ComponentKind, pieceId: string) {
     const piece = allPieces.find((p) => p.id === pieceId);
     if (!piece) return { ok: false, message: 'Componente non riconosciuto.' };
-    const check = canPlacePiece(slotId, piece);
-    if (check.ok) {
-      setPlaced((prev) => ({ ...prev, [slotId]: piece }));
-    }
+    const check = canPlaceAux(slotId, piece);
+    if (check.ok) setAuxPlaced((prev) => ({ ...prev, [slotId]: piece }));
     return check;
   }
 
-  function handleRemove(slotId: ComponentKind) {
-    setPlaced((prev) => {
+  function handleRemoveAux(slotId: ComponentKind) {
+    setAuxPlaced((prev) => {
       const next = { ...prev };
       delete next[slotId];
       return next;
     });
   }
 
-  const fluid = selectedFluid(placed);
+  const fluid = selectedFluid(auxPlaced);
   const hpBar = fluid ? saturationBarAssoluti(fluid, tempCond) : null;
   const bpBar = fluid ? saturationBarAssoluti(fluid, tempEvap) : null;
-  const gaugesActive = validation.isFullyCorrect;
+  const gaugesLive = simulationRunning && validation.isFullyCorrect;
+  const flowActive = simulationRunning && validation.sequenceComplete;
+
+  const diametroHP = auxPlaced['tubo-hp']?.diametro ?? null;
+  const diametroBP = auxPlaced['tubo-bp']?.diametro ?? null;
 
   return (
     <div className="app-shell">
@@ -115,14 +170,31 @@ function App() {
             </p>
           )}
 
+          <h2 className="panel-title">Diametri e fluido</h2>
+          <div className="aux-slots-row">
+            {AUX_SLOTS.map((s) => (
+              <Slot
+                key={s.id}
+                id={s.id}
+                label={s.label}
+                displayLabel={s.compactLabel}
+                aiuto={s.aiuto}
+                piece={auxPlaced[s.id] ?? null}
+                style={{ width: 122, height: 66 }}
+                selectedPiece={selectedPiece}
+                onDropPiece={handleDropAux}
+                onPlacedSuccess={() => setSelectedPieceId(null)}
+                onRemove={handleRemoveAux}
+                variant="aux"
+              />
+            ))}
+          </div>
           <p className="panel-hint">
-            Guida diametri per impianto <strong>{diameterGuide.label}</strong>: HP {diameterGuide.hp.join(', ')}"
+            Guida diametri per <strong>{diameterGuide.label}</strong>: HP {diameterGuide.hp.join(', ')}"
             &nbsp;· BP {diameterGuide.bp.join(', ')}".
             <br />
             <span className="panel-hint-muted">
-              È una guida didattica semplificata per esercizio, non un calcolo reale di perdita di carico
-              (che richiede lunghezza linea, dislivelli, numero di curve, ecc.). Trascina il tubo del diametro
-              scelto sulla linea corrispondente nel circuito.
+              Guida didattica semplificata, non un calcolo reale di perdita di carico.
             </span>
           </p>
 
@@ -144,38 +216,72 @@ function App() {
           </p>
 
           <div className="gauges-panel">
-            <Gauge kind="BP" valueBar={bpBar} maxBar={40} active={gaugesActive} />
-            <Gauge kind="HP" valueBar={hpBar} maxBar={60} active={gaugesActive} />
+            <Gauge kind="BP" valueBar={bpBar} maxBar={40} active={gaugesLive} running={simulationRunning} />
+            <Gauge kind="HP" valueBar={hpBar} maxBar={60} active={gaugesLive} running={simulationRunning} />
           </div>
         </aside>
 
         <main className="main-area">
-          <Toolbox
-            sections={toolboxSections}
-            usedKinds={usedKinds}
-            selectedPieceId={selectedPieceId}
-            onSelectPiece={(p) => setSelectedPieceId((cur) => (cur === p.id ? null : p.id))}
-          />
+          <div className="sim-controls">
+            <button
+              type="button"
+              className={`sim-button${simulationRunning ? ' is-running' : ''}`}
+              onClick={() => setSimulationRunning((v) => !v)}
+            >
+              {simulationRunning ? 'Ferma simulazione' : 'Avvia simulazione'}
+            </button>
+            <span className={`sim-status${validation.isFullyCorrect ? ' is-ok' : ' is-warning'}`}>
+              {validation.isFullyCorrect
+                ? 'Circuito pronto: sequenza, diametri, fluido e temperature coerenti.'
+                : simulationRunning
+                  ? 'Simulazione avviata: il flusso si ferma al primo errore, vedi sotto perché.'
+                  : 'Circuito non ancora completo: vedi i suggerimenti sotto.'}
+            </span>
+          </div>
 
-          <CircuitBoard
-            placed={placed}
-            blockedSlotIndex={validation.blockedSlotIndex}
-            flowActive={validation.sequenceComplete}
-            flowOk={validation.isFullyCorrect}
-            selectedPiece={selectedPiece}
-            onDropPiece={handleDropPiece}
-            onPlacedSuccess={() => setSelectedPieceId(null)}
-            onRemove={handleRemove}
-          />
+          <div className="workbench">
+            <Toolbox
+              sections={toolboxSections}
+              usedKinds={usedKinds}
+              selectedPieceId={selectedPieceId}
+              onSelectPiece={(p) => setSelectedPieceId((cur) => (cur === p.id ? null : p.id))}
+            />
+            <CircuitCanvas
+              nodes={nodes}
+              edgeEvaluations={validation.edgeEvaluations}
+              activeEdgeIds={validation.activeEdgeIds}
+              simulationRunning={flowActive}
+              flowOk={validation.isFullyCorrect}
+              diametroHP={diametroHP}
+              diametroBP={diametroBP}
+              selectedPiece={selectedPiece}
+              onPlaceNode={handlePlaceNode}
+              onMoveNode={handleMoveNode}
+              onRemoveNode={handleRemoveNode}
+              onAddEdge={handleAddEdge}
+              onRemoveEdge={handleRemoveEdge}
+              onPlacedSuccess={() => setSelectedPieceId(null)}
+            />
+          </div>
 
           <div className="messages-panel">
             {validation.isFullyCorrect && (
-              <div className="message message-ok">
-                Circuito montato correttamente: sequenza, diametri, fluido e temperature sono coerenti. Il fluido scorre nel circuito.
+              <div className="message-ok-banner">
+                Circuito montato correttamente: sequenza, diametri, fluido e temperature sono coerenti.
               </div>
             )}
             {validation.messages.map((m, i) => (
-              <div key={i} className={`message message-${m.level}`}>{m.text}</div>
+              <div key={i} className={`message-card${m.severity === 'warning' ? ' is-warning' : ''}`}>
+                <div className="message-card-icon">{m.severity === 'warning' ? '!' : '×'}</div>
+                <div className="message-card-body">
+                  <p className="message-card-title">{m.title}</p>
+                  <p className="message-card-why">{m.why}</p>
+                  <div className="message-card-whatodo">
+                    <span className="message-card-whatodo-label">Cosa fare</span>
+                    <span>{m.whatToDo}</span>
+                  </div>
+                </div>
+              </div>
             ))}
           </div>
 
@@ -187,6 +293,7 @@ function App() {
               <li>Pressioni calcolate da tabelle di saturazione verificate (CoolProp 7.2.0, cross-check ASHRAE/produttore), passo 5°C con interpolazione lineare.</li>
               <li>bar assoluti = kPa gauge / 100 + 1.013</li>
               <li>Tabella diametri: guida didattica semplificata per esercizio, non calcolo di perdita di carico reale.</li>
+              <li>Posiziona i componenti dove vuoi e collegali trascinando dal pallino in basso a destra di ciascuno: la validazione controlla solo la logica dei collegamenti, non la disposizione grafica.</li>
             </ul>
           </details>
         </main>

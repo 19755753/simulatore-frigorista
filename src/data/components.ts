@@ -24,17 +24,77 @@ export interface ToolboxPiece {
   descrizioneBreve: string;
 }
 
-/** Sequenza obbligatoria degli slot del circuito (ordine di montaggio corretto). */
-export const CIRCUIT_SLOTS: { id: ComponentKind; label: string; aiuto: string }[] = [
-  { id: 'compressore', label: 'Compressore', aiuto: 'Comprime il gas refrigerante a bassa pressione portandolo ad alta pressione.' },
-  { id: 'condensatore', label: 'Condensatore', aiuto: 'Il gas caldo ad alta pressione cede calore all\'aria e condensa in liquido.' },
-  { id: 'filtro', label: 'Filtro deidratatore', aiuto: 'Trattiene umidità e impurità dal liquido. Va montato SUBITO dopo il condensatore.' },
-  { id: 'voyant', label: 'Voyant liquide (spia liquido)', aiuto: 'Permette di vedere se il liquido è privo di bolle. Va montato DOPO il filtro, mai prima.' },
-  { id: 'detendeur', label: 'Détendeur (valvola d\'espansione)', aiuto: 'Lamina il liquido riducendone pressione e temperatura prima dell\'evaporatore.' },
-  { id: 'evaporatore', label: 'Evaporatore', aiuto: 'Il liquido a bassa pressione assorbe calore dall\'ambiente ed evapora.' },
+/** I 6 componenti del ciclo, nell'ordine fisico corretto di montaggio (ciclico). */
+export const ORDERED_KINDS: ComponentKind[] = [
+  'compressore', 'condensatore', 'filtro', 'voyant', 'detendeur', 'evaporatore',
 ];
 
-/** Slot ausiliari: non fanno parte della sequenza di montaggio ma richiedono comunque un drag&drop. */
+export interface ComponentInfo {
+  label: string;
+  ruolo: string;
+  perche: string;
+}
+
+/** Base di conoscenza didattica: cosa fa ogni componente e perché sta in quel punto del ciclo. */
+export const COMPONENT_INFO: Record<ComponentKind, ComponentInfo> = {
+  compressore: {
+    label: 'Compressore',
+    ruolo: 'aspira il gas a bassa pressione e lo comprime portandolo ad alta pressione e alta temperatura',
+    perche: 'è il punto di partenza del ciclo: crea il salto di pressione che fa muovere tutto il fluido nel circuito',
+  },
+  condensatore: {
+    label: 'Condensatore',
+    ruolo: 'riceve il gas caldo ad alta pressione appena uscito dal compressore e lo raffredda fino a farlo condensare in liquido',
+    perche: 'deve stare subito dopo il compressore: solo lì il fluido è ancora gas caldo ad alta pressione, pronto a cedere calore',
+  },
+  filtro: {
+    label: 'Filtro deidratatore',
+    ruolo: 'trattiene umidità e impurità dal liquido refrigerante',
+    perche: 'va montato subito dopo il condensatore, perché a quel punto il fluido è già liquido: il filtro deidratatore funziona solo su liquido, non su gas',
+  },
+  voyant: {
+    label: 'Voyant liquide',
+    ruolo: 'permette di vedere a occhio se il liquido che scorre è privo di bolle di gas',
+    perche: 'va montato dopo il filtro, mai prima: deve controllare il liquido già pulito e disidratato, appena prima che arrivi alla valvola di espansione',
+  },
+  detendeur: {
+    label: 'Détendeur',
+    ruolo: 'lamina il liquido ad alta pressione facendolo passare attraverso un piccolo orifizio, riducendone di colpo pressione e temperatura',
+    perche: 'deve ricevere liquido pulito e senza bolle (per questo viene dopo filtro e voyant): è il punto in cui il circuito passa da alta a bassa pressione',
+  },
+  evaporatore: {
+    label: 'Evaporatore',
+    ruolo: 'il liquido freddo a bassa pressione assorbe calore dall\'ambiente da raffreddare ed evapora tornando gas',
+    perche: 'riceve il fluido subito dopo il détendeur, quando è freddo e a bassa pressione: è qui che avviene il vero effetto frigorifero',
+  },
+  silenziatore: {
+    label: 'Silenziatore mandata',
+    ruolo: 'attutisce le pulsazioni di pressione generate dal compressore sulla linea di mandata',
+    perche: 'è opzionale: se usato, va sulla linea tra compressore e condensatore',
+  },
+  'tubo-hp': { label: 'Tubo HP', ruolo: 'linea liquido/mandata ad alta pressione', perche: 'il diametro va scelto in base alla potenza dell\'impianto' },
+  'tubo-bp': { label: 'Tubo BP', ruolo: 'linea aspirazione a bassa pressione', perche: 'il diametro va scelto in base alla potenza dell\'impianto' },
+  fluido: { label: 'Fluido frigorigeno', ruolo: 'il fluido che circola nell\'impianto scambiando calore', perche: 'senza fluido caricato il circuito non può funzionare' },
+};
+
+export interface RequiredEdge {
+  from: ComponentKind;
+  to: ComponentKind;
+  kind: 'HP' | 'BP';
+}
+
+/** Collegamenti (tubi) richiesti nel ciclo corretto, in ordine, con la relativa linea HP/BP. */
+export const REQUIRED_EDGES: RequiredEdge[] = ORDERED_KINDS.map((kind, i) => ({
+  from: kind,
+  to: ORDERED_KINDS[(i + 1) % ORDERED_KINDS.length],
+  kind: i < 4 ? 'HP' : 'BP',
+}));
+
+export function findRequiredEdge(from: ComponentKind, to: ComponentKind): RequiredEdge | undefined {
+  return REQUIRED_EDGES.find((e) => e.from === from && e.to === to);
+}
+
+/** Slot ausiliari a posizione fissa: non fanno parte del canvas libero. */
 export const AUX_SLOTS: { id: ComponentKind; label: string; compactLabel: string; aiuto: string }[] = [
   { id: 'tubo-hp', label: 'Diametro linea liquido (HP)', compactLabel: 'Tubo HP', aiuto: 'Trascina qui il tubo con il diametro scelto per la linea alta pressione.' },
   { id: 'tubo-bp', label: 'Diametro aspirazione (BP)', compactLabel: 'Tubo BP', aiuto: 'Trascina qui il tubo con il diametro scelto per la linea bassa pressione.' },
@@ -47,15 +107,15 @@ export function toolboxForCompressors(compressori: CompressorVariant[]): Toolbox
     kind: 'compressore',
     variant,
     label: compressorLabel(variant),
-    descrizioneBreve: 'Da posizionare nello slot 1 del circuito.',
+    descrizioneBreve: 'Trascinalo in un punto libero del banco di lavoro.',
   }));
 
   pieces.push(
-    { id: 'condensatore', kind: 'condensatore', label: 'Condensatore + ventola', descrizioneBreve: 'Slot 2: dopo il compressore.' },
-    { id: 'filtro', kind: 'filtro', label: 'Filtro deidratatore', descrizioneBreve: 'Slot 3: dopo il condensatore.' },
-    { id: 'voyant', kind: 'voyant', label: 'Voyant liquide', descrizioneBreve: 'Slot 4: dopo il filtro.' },
-    { id: 'detendeur', kind: 'detendeur', label: 'Détendeur', descrizioneBreve: 'Slot 5: dopo il voyant.' },
-    { id: 'evaporatore', kind: 'evaporatore', label: 'Evaporatore + ventola', descrizioneBreve: 'Slot 6: chiude il circuito verso il compressore.' },
+    { id: 'condensatore', kind: 'condensatore', label: 'Condensatore + ventola', descrizioneBreve: 'Posizionalo dove vuoi, poi collegalo con un tubo.' },
+    { id: 'filtro', kind: 'filtro', label: 'Filtro deidratatore', descrizioneBreve: 'Posizionalo dove vuoi, poi collegalo con un tubo.' },
+    { id: 'voyant', kind: 'voyant', label: 'Voyant liquide', descrizioneBreve: 'Posizionalo dove vuoi, poi collegalo con un tubo.' },
+    { id: 'detendeur', kind: 'detendeur', label: 'Détendeur', descrizioneBreve: 'Posizionalo dove vuoi, poi collegalo con un tubo.' },
+    { id: 'evaporatore', kind: 'evaporatore', label: 'Evaporatore + ventola', descrizioneBreve: 'Posizionalo dove vuoi, poi collegalo con un tubo.' },
   );
   return pieces;
 }
@@ -72,7 +132,7 @@ export const SILENZIATORE_PIECE: ToolboxPiece = {
   id: 'silenziatore',
   kind: 'silenziatore',
   label: 'Silenziatore mandata (opzionale)',
-  descrizioneBreve: 'Si monta sulla linea di mandata, tra compressore e condensatore. Facoltativo.',
+  descrizioneBreve: 'Facoltativo: posizionalo sulla linea tra compressore e condensatore.',
 };
 
 export function toolboxTubesHP(): ToolboxPiece[] {
