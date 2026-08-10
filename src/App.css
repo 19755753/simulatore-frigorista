@@ -812,6 +812,44 @@
 .swatch-hp { background: var(--hp-red); }
 .swatch-bp { background: var(--bp-blue); }
 
+/* Tabella P-T */
+.pt-table-scroll {
+  overflow-x: auto;
+  margin-top: 10px;
+}
+.pt-table {
+  border-collapse: collapse;
+  width: 100%;
+  max-width: 420px;
+  font-size: 13px;
+}
+.pt-table th,
+.pt-table td {
+  padding: 6px 12px;
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+  border-bottom: 1px solid var(--border);
+}
+.pt-table th:first-child,
+.pt-table td:first-child {
+  text-align: left;
+}
+.pt-table thead th {
+  color: var(--copper);
+  font-weight: 700;
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.3px;
+  border-bottom: 1px solid var(--copper-dark);
+}
+.pt-table tbody tr:hover {
+  background: var(--graphite-2);
+}
+.pt-table tbody td:last-child {
+  color: var(--text);
+  font-weight: 600;
+}
+
 @media (max-width: 980px) {
   .controls-panel {
     position: static;

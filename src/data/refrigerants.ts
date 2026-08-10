@@ -1,7 +1,12 @@
-// Tabelle di saturazione pressione/temperatura, passo 5°C, in kPa gauge.
+// Tabelle di saturazione pressione/temperatura, passo 5°C, in bar assoluti.
 // Fonte: CoolProp 7.2.0, cross-check ASHRAE Handbook / manufacturer datasheet (hvacptcharts.com).
-// Conversione: bar_assoluti = kPa_gauge / 100 + 1.013
 // NON aggiungere fluidi senza dati verificati da fonte tecnica affidabile.
+//
+// Nota R404A: i valori forniti in origine per questo fluido erano relativi (gauge), non assoluti —
+// erano sistematicamente ~1.013 bar più bassi degli equivalenti assoluti su tutti i 17 punti,
+// mentre R32/R410A corrispondevano già ai valori assoluti. Corretti sommando l'offset atmosferico
+// (1.013 bar) per restare coerenti con R32/R410A e con il resto dello strumento, che lavora sempre
+// in bar assoluti.
 
 export type RefrigerantId = 'R32' | 'R410A' | 'R404A';
 
@@ -10,8 +15,8 @@ export interface Refrigerant {
   label: string;
   classe: string; // classificazione di sicurezza ASHRAE (A1, A2L, ...)
   note: string;
-  // kPa gauge, chiave = temperatura °C (multipli di 5)
-  saturazioneKpaGauge: Record<number, number>;
+  // bar assoluti, chiave = temperatura °C (multipli di 5)
+  saturazioneBarAssoluti: Record<number, number>;
 }
 
 export const REFRIGERANTS: Record<RefrigerantId, Refrigerant> = {
@@ -20,10 +25,10 @@ export const REFRIGERANTS: Record<RefrigerantId, Refrigerant> = {
     label: 'R32',
     classe: 'A2L',
     note: 'Climatizzatori, lieve infiammabilità (A2L)',
-    saturazioneKpaGauge: {
-      '-30': 172, '-25': 233, '-20': 304, '-15': 387, '-10': 481, '-5': 589,
-      '0': 712, '5': 850, '10': 1006, '15': 1180, '20': 1373, '25': 1588,
-      '30': 1826, '35': 2089, '40': 2377, '45': 2694, '50': 3040,
+    saturazioneBarAssoluti: {
+      '-30': 2.75, '-25': 3.34, '-20': 4.04, '-15': 4.87, '-10': 5.82, '-5': 6.90,
+      '0': 8.13, '5': 9.51, '10': 11.07, '15': 12.80, '20': 14.74, '25': 16.89,
+      '30': 19.27, '35': 21.90, '40': 24.78, '45': 27.95, '50': 31.41,
     },
   },
   R410A: {
@@ -31,10 +36,10 @@ export const REFRIGERANTS: Record<RefrigerantId, Refrigerant> = {
     label: 'R410A',
     classe: 'A1',
     note: 'Climatizzatori, non infiammabile (A1)',
-    saturazioneKpaGauge: {
-      '-30': 169, '-25': 229, '-20': 299, '-15': 380, '-10': 473, '-5': 579,
-      '0': 699, '5': 835, '10': 987, '15': 1157, '20': 1346, '25': 1556,
-      '30': 1788, '35': 2044, '40': 2324, '45': 2633, '50': 2969,
+    saturazioneBarAssoluti: {
+      '-30': 2.70, '-25': 3.30, '-20': 4.00, '-15': 4.81, '-10': 5.74, '-5': 6.80,
+      '0': 8.00, '5': 9.36, '10': 10.87, '15': 12.57, '20': 14.46, '25': 16.57,
+      '30': 18.90, '35': 21.45, '40': 24.34, '45': 27.35, '50': 30.70,
     },
   },
   R404A: {
@@ -42,19 +47,17 @@ export const REFRIGERANTS: Record<RefrigerantId, Refrigerant> = {
     label: 'R404A',
     classe: 'A1',
     note: 'Frigo commerciale, non infiammabile — in phase-down per GWP alto',
-    saturazioneKpaGauge: {
-      '-30': 107, '-25': 152, '-20': 206, '-15': 267, '-10': 338, '-5': 418,
-      '0': 509, '5': 611, '10': 726, '15': 854, '20': 996, '25': 1153,
-      '30': 1327, '35': 1518, '40': 1728, '45': 1958, '50': 2209,
+    saturazioneBarAssoluti: {
+      '-30': 2.09, '-25': 2.54, '-20': 3.08, '-15': 3.69, '-10': 4.40, '-5': 5.20,
+      '0': 6.11, '5': 7.13, '10': 8.28, '15': 9.56, '20': 10.98, '25': 12.55,
+      '30': 14.29, '35': 16.20, '40': 18.30, '45': 20.60, '50': 23.11,
     },
   },
 };
 
-const KPA_TO_BAR_OFFSET = 1.013;
-
-/** Interpola linearmente la pressione di saturazione (kPa gauge) per una temperatura qualsiasi. */
-export function saturationKpaGauge(refrigerant: RefrigerantId, tempC: number): number {
-  const table = REFRIGERANTS[refrigerant].saturazioneKpaGauge;
+/** Interpola linearmente la pressione di saturazione (bar assoluti) per una temperatura qualsiasi. */
+export function saturationBarAssoluti(refrigerant: RefrigerantId, tempC: number): number {
+  const table = REFRIGERANTS[refrigerant].saturazioneBarAssoluti;
   const keys = Object.keys(table).map(Number).sort((a, b) => a - b);
   const min = keys[0];
   const max = keys[keys.length - 1];
@@ -72,16 +75,6 @@ export function saturationKpaGauge(refrigerant: RefrigerantId, tempC: number): n
   if (lower === upper) return table[lower];
   const fraction = (clamped - lower) / (upper - lower);
   return table[lower] + fraction * (table[upper] - table[lower]);
-}
-
-/** Converte kPa gauge in bar assoluti. */
-export function kpaGaugeToBarAssoluti(kpaGauge: number): number {
-  return kpaGauge / 100 + KPA_TO_BAR_OFFSET;
-}
-
-/** Pressione di saturazione in bar assoluti per una data temperatura. */
-export function saturationBarAssoluti(refrigerant: RefrigerantId, tempC: number): number {
-  return kpaGaugeToBarAssoluti(saturationKpaGauge(refrigerant, tempC));
 }
 
 export const TEMP_RANGE = { min: -30, max: 50, step: 5 };

@@ -2,6 +2,7 @@ import { useMemo, useRef, useState } from 'react';
 import './App.css';
 import { CircuitCanvas } from './components/CircuitCanvas';
 import { ExerciseSrSc, type SrScResult } from './components/ExerciseSrSc';
+import { PtTable } from './components/PtTable';
 import { Slot } from './components/Slot';
 import { Toolbox, type ToolboxSection } from './components/Toolbox';
 import { Gauge } from './components/Gauge';
@@ -378,13 +379,14 @@ function App() {
             ))}
           </div>
 
+          <PtTable fluido={fluid} />
+
           <details className="legend">
             <summary>Legenda e note didattiche</summary>
             <ul>
               <li><span className="swatch swatch-hp" /> Linea alta pressione (HP) — mandata / liquido</li>
               <li><span className="swatch swatch-bp" /> Linea bassa pressione (BP) — aspirazione</li>
-              <li>Pressioni calcolate da tabelle di saturazione verificate (CoolProp 7.2.0, cross-check ASHRAE/produttore), passo 5°C con interpolazione lineare.</li>
-              <li>bar assoluti = kPa gauge / 100 + 1.013</li>
+              <li>Pressioni in bar assoluti da tabelle di saturazione verificate (CoolProp 7.2.0, cross-check ASHRAE/produttore), passo 5°C con interpolazione lineare.</li>
               <li>Tabella diametri: guida didattica semplificata per esercizio, non calcolo di perdita di carico reale.</li>
               <li>Posiziona i componenti dove vuoi e collegali trascinando dal pallino in basso a destra di ciascuno: la validazione controlla solo la logica dei collegamenti, non la disposizione grafica.</li>
             </ul>
