@@ -640,6 +640,148 @@
   padding-top: 1px;
 }
 
+/* Esercizio SR/SC */
+.exercise-panel {
+  background: var(--graphite-1);
+  border: 1px solid var(--copper-dark);
+  border-radius: 10px;
+  padding: 16px;
+}
+.exercise-panel-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+.exercise-regenerate-btn {
+  background: var(--graphite-2);
+  border: 1px solid var(--border);
+  color: var(--text);
+  border-radius: 7px;
+  padding: 7px 14px;
+  font-size: 12.5px;
+  font-weight: 700;
+  cursor: pointer;
+  transition: border-color 0.15s;
+}
+.exercise-regenerate-btn:hover {
+  border-color: var(--copper);
+}
+
+.exercise-cards {
+  display: flex;
+  gap: 16px;
+  flex-wrap: wrap;
+  margin-top: 14px;
+}
+.exercise-card {
+  flex: 1 1 320px;
+  min-width: 280px;
+  background: var(--graphite-2);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 14px 16px;
+}
+.exercise-card-title {
+  margin: 0 0 10px;
+  font-size: 13.5px;
+  font-weight: 700;
+  color: var(--text);
+}
+.exercise-readouts {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+  margin-bottom: 12px;
+}
+.exercise-chip {
+  background: var(--graphite-3);
+  border: 1px solid var(--border);
+  border-radius: 20px;
+  padding: 5px 12px;
+  font-size: 12.5px;
+  font-variant-numeric: tabular-nums;
+  color: var(--text);
+}
+.exercise-chip-hp {
+  border-color: var(--hp-red);
+  color: #f3b8b8;
+}
+.exercise-chip-bp {
+  border-color: var(--bp-blue);
+  color: #b9d3f5;
+}
+
+.exercise-input-row {
+  display: flex;
+  align-items: flex-end;
+  gap: 10px;
+}
+.exercise-input-row label {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  font-size: 12px;
+  color: var(--text-muted);
+  flex: 1;
+}
+.exercise-input-row input {
+  background: var(--graphite-1);
+  border: 1px solid var(--border);
+  color: var(--text);
+  border-radius: 6px;
+  padding: 8px 10px;
+  font-size: 14px;
+  font-variant-numeric: tabular-nums;
+  width: 100%;
+}
+.exercise-input-row input:focus {
+  outline: 2px solid var(--copper);
+  outline-offset: 1px;
+}
+.exercise-check-btn {
+  background: var(--copper);
+  color: #221202;
+  border: none;
+  border-radius: 6px;
+  padding: 9px 16px;
+  font-size: 13px;
+  font-weight: 700;
+  cursor: pointer;
+  white-space: nowrap;
+}
+.exercise-check-btn:hover {
+  filter: brightness(1.1);
+}
+
+.exercise-result {
+  margin-top: 12px;
+  padding: 10px 12px;
+  border-radius: 8px;
+  border: 1px solid var(--border);
+}
+.exercise-result.is-correct {
+  background: rgba(76, 175, 109, 0.12);
+  border-color: var(--ok-green);
+}
+.exercise-result.is-wrong {
+  background: rgba(224, 85, 85, 0.12);
+  border-color: var(--err-red);
+}
+.exercise-result-title {
+  margin: 0 0 4px;
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--text);
+}
+.exercise-result-detail {
+  margin: 0;
+  font-size: 12.5px;
+  line-height: 1.55;
+  color: var(--text-muted);
+}
+
 /* Legend */
 .legend {
   background: var(--graphite-1);

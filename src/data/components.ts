@@ -10,6 +10,7 @@ export type ComponentKind =
   | 'detendeur'
   | 'evaporatore'
   | 'silenziatore'
+  | 'filtro-aspirazione'
   | 'tubo-hp'
   | 'tubo-bp'
   | 'fluido';
@@ -71,6 +72,11 @@ export const COMPONENT_INFO: Record<ComponentKind, ComponentInfo> = {
     label: 'Silenziatore mandata',
     ruolo: 'attutisce le pulsazioni di pressione generate dal compressore sulla linea di mandata',
     perche: 'è opzionale: se usato, va sulla linea tra compressore e condensatore',
+  },
+  'filtro-aspirazione': {
+    label: 'Filtro aspirazione',
+    ruolo: 'trattiene impurità e particelle metalliche sulla linea di aspirazione, prima del compressore',
+    perche: 'è opzionale e tipicamente temporaneo: si monta sulla linea tra evaporatore e compressore soprattutto dopo una rottura del compressore, per proteggere il nuovo compressore dai residui, e si rimuove dopo qualche settimana di funzionamento',
   },
   'tubo-hp': { label: 'Tubo HP', ruolo: 'linea liquido/mandata ad alta pressione', perche: 'il diametro va scelto in base alla potenza dell\'impianto' },
   'tubo-bp': { label: 'Tubo BP', ruolo: 'linea aspirazione a bassa pressione', perche: 'il diametro va scelto in base alla potenza dell\'impianto' },
@@ -145,6 +151,13 @@ export const SILENZIATORE_PIECE: ToolboxPiece = {
   kind: 'silenziatore',
   label: 'Silenziatore mandata (opzionale)',
   descrizioneBreve: 'Facoltativo: posizionalo sulla linea tra compressore e condensatore.',
+};
+
+export const FILTRO_ASPIRAZIONE_PIECE: ToolboxPiece = {
+  id: 'filtro-aspirazione',
+  kind: 'filtro-aspirazione',
+  label: 'Filtro aspirazione (opzionale)',
+  descrizioneBreve: 'Facoltativo e temporaneo: si usa sulla linea tra evaporatore e compressore, tipicamente dopo una rottura del compressore.',
 };
 
 export function toolboxTubesHP(): ToolboxPiece[] {

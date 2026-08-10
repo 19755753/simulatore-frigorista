@@ -1,5 +1,5 @@
 import { useRef, useState } from 'react';
-import type { ComponentKind, ToolboxPiece } from '../data/components';
+import { ORDERED_KINDS, type ComponentKind, type ToolboxPiece } from '../data/components';
 import { DIAMETER_STROKE } from '../data/plantTypes';
 import type { CanvasNode, DropCheck, EdgeEvaluation, PlacedNodes } from '../logic/validation';
 import { pieceIcon } from './Toolbox';
@@ -483,7 +483,7 @@ export function CircuitCanvas({
           </button>
           <div className="node-icon">{pieceIcon(node.piece)}</div>
           <div className="node-label">{node.piece.label}</div>
-          {node.piece.kind !== 'silenziatore' && (
+          {ORDERED_KINDS.includes(node.piece.kind) && (
             <div
               className="node-port"
               onPointerDown={(e) => startConnect(e, node.kind)}

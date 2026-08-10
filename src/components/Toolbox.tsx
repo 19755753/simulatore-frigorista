@@ -8,6 +8,7 @@ import {
   FluidCylinderSvg,
   SightGlassSvg,
   SilencerSvg,
+  SuctionFilterSvg,
   TubePieceSvg,
 } from './pieces';
 
@@ -20,6 +21,7 @@ export function pieceIcon(piece: ToolboxPiece) {
     case 'detendeur': return <ExpansionValveSvg />;
     case 'evaporatore': return <EvaporatorSvg />;
     case 'silenziatore': return <SilencerSvg />;
+    case 'filtro-aspirazione': return <SuctionFilterSvg />;
     case 'tubo-hp': return <TubePieceSvg kind="tubo-hp" diametro={piece.diametro!} />;
     case 'tubo-bp': return <TubePieceSvg kind="tubo-bp" diametro={piece.diametro!} />;
     case 'fluido': return <FluidCylinderSvg fluido={piece.fluido!} />;

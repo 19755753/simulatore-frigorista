@@ -169,6 +169,21 @@ export function SilencerSvg() {
   );
 }
 
+export function SuctionFilterSvg() {
+  return (
+    <svg viewBox="0 0 160 110" className="piece-svg" role="img" aria-label="Filtro aspirazione (opzionale)">
+      <line x1="10" y1="55" x2="30" y2="55" stroke={BP_BLUE} strokeWidth="6" />
+      <rect x="30" y="34" width="100" height="42" rx="21" fill={GRAPHITE} stroke={METAL} strokeWidth="2" strokeDasharray="5 4" />
+      <ellipse cx="51" cy="55" rx="8" ry="18" fill="none" stroke={COPPER} strokeWidth="1.5" opacity="0.6" />
+      <ellipse cx="109" cy="55" rx="8" ry="18" fill="none" stroke={COPPER} strokeWidth="1.5" opacity="0.6" />
+      <line x1="130" y1="55" x2="150" y2="55" stroke={BP_BLUE} strokeWidth="6" />
+      {/* freccia di senso di flusso */}
+      <path d="M96 55 h20 M108 47 l8 8 l-8 8" fill="none" stroke={COPPER} strokeWidth="3" strokeLinecap="round" strokeLinejoin="round" />
+      <text x="80" y="98" textAnchor="middle" className="piece-label">Filtro aspirazione (opz.)</text>
+    </svg>
+  );
+}
+
 export function TubeSampleSvg({ color }: { color: 'hp' | 'bp' }) {
   const stroke = color === 'hp' ? HP_RED : BP_BLUE;
   return (

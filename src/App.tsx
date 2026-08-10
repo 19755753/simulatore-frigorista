@@ -1,11 +1,13 @@
 import { useMemo, useRef, useState } from 'react';
 import './App.css';
 import { CircuitCanvas } from './components/CircuitCanvas';
+import { ExerciseSrSc, type SrScResult } from './components/ExerciseSrSc';
 import { Slot } from './components/Slot';
 import { Toolbox, type ToolboxSection } from './components/Toolbox';
 import { Gauge } from './components/Gauge';
 import {
   AUX_SLOTS,
+  FILTRO_ASPIRAZIONE_PIECE,
   SILENZIATORE_PIECE,
   toolboxForCompressors,
   toolboxFluids,
@@ -29,6 +31,13 @@ import {
 const tempOptions: number[] = [];
 for (let t = TEMP_RANGE.min; t <= TEMP_RANGE.max; t += TEMP_RANGE.step) tempOptions.push(t);
 
+const SR_SC_TOLERANCE = 0.5;
+
+function randomOffset(min = 3, max = 9): number {
+  const raw = min + Math.random() * (max - min);
+  return Math.round(raw * 2) / 2;
+}
+
 function App() {
   const [plantTypeId, setPlantTypeId] = useState<PlantTypeId>('climatizzatore');
   const plantType = PLANT_TYPES[plantTypeId];
@@ -40,11 +49,18 @@ function App() {
   const [tempEvap, setTempEvap] = useState<number>(-10);
   const [tempCond, setTempCond] = useState<number>(40);
   const [simulationRunning, setSimulationRunning] = useState(false);
+  const [srOffset, setSrOffset] = useState(() => randomOffset());
+  const [scOffset, setScOffset] = useState(() => randomOffset());
+  const [srAnswer, setSrAnswer] = useState('');
+  const [scAnswer, setScAnswer] = useState('');
+  const [srResult, setSrResult] = useState<SrScResult | null>(null);
+  const [scResult, setScResult] = useState<SrScResult | null>(null);
   const edgeCounter = useRef(0);
 
   const toolboxSections: ToolboxSection[] = useMemo(() => {
     const componenti = toolboxForCompressors(plantType.compressoriDisponibili);
     if (plantType.hasSilenziatoreOpzionale) componenti.push(SILENZIATORE_PIECE);
+    componenti.push(FILTRO_ASPIRAZIONE_PIECE);
     return [
       { title: 'Componenti circuito', pieces: componenti },
       { title: 'Diametri tubo', pieces: [...toolboxTubesHP(), ...toolboxTubesBP()] },
@@ -158,11 +174,43 @@ function App() {
     });
   }
 
+  function regenerateExercise() {
+    setSrOffset(randomOffset());
+    setScOffset(randomOffset());
+    setSrAnswer('');
+    setScAnswer('');
+    setSrResult(null);
+    setScResult(null);
+  }
+
+  function handleCheckSr() {
+    const val = parseFloat(srAnswer.replace(',', '.'));
+    if (Number.isNaN(val)) return;
+    setSrResult({ correct: Math.abs(val - srOffset) <= SR_SC_TOLERANCE, expected: srOffset, userValue: val });
+  }
+
+  function handleCheckSc() {
+    const val = parseFloat(scAnswer.replace(',', '.'));
+    if (Number.isNaN(val)) return;
+    setScResult({ correct: Math.abs(val - scOffset) <= SR_SC_TOLERANCE, expected: scOffset, userValue: val });
+  }
+
   const fluid = selectedFluid(auxPlaced);
   const hpBar = fluid ? saturationBarAssoluti(fluid, tempCond) : null;
   const bpBar = fluid ? saturationBarAssoluti(fluid, tempEvap) : null;
   const gaugesLive = simulationRunning && validation.isFullyCorrect;
   const flowActive = simulationRunning && validation.sequenceComplete;
+  const srMeasuredTemp = tempCond - srOffset;
+  const scMeasuredTemp = tempEvap + scOffset;
+  const showExercise = simulationRunning && validation.isFullyCorrect && hpBar !== null && bpBar !== null;
+
+  function toggleSimulation() {
+    setSimulationRunning((v) => {
+      const next = !v;
+      if (next) regenerateExercise();
+      return next;
+    });
+  }
 
   return (
     <div className="app-shell">
@@ -250,7 +298,7 @@ function App() {
             <button
               type="button"
               className={`sim-button${simulationRunning ? ' is-running' : ''}`}
-              onClick={() => setSimulationRunning((v) => !v)}
+              onClick={toggleSimulation}
             >
               {simulationRunning ? 'Ferma simulazione' : 'Avvia simulazione'}
             </button>
@@ -288,6 +336,26 @@ function App() {
               onPlacedSuccess={() => setSelectedPieceId(null)}
             />
           </div>
+
+          {showExercise && (
+            <ExerciseSrSc
+              hpBar={hpBar!}
+              bpBar={bpBar!}
+              tempCond={tempCond}
+              tempEvap={tempEvap}
+              srMeasuredTemp={srMeasuredTemp}
+              scMeasuredTemp={scMeasuredTemp}
+              srAnswer={srAnswer}
+              scAnswer={scAnswer}
+              onSrAnswerChange={setSrAnswer}
+              onScAnswerChange={setScAnswer}
+              srResult={srResult}
+              scResult={scResult}
+              onCheckSr={handleCheckSr}
+              onCheckSc={handleCheckSc}
+              onRegenerate={regenerateExercise}
+            />
+          )}
 
           <div className="messages-panel">
             {validation.isFullyCorrect && (
