@@ -1,5 +1,6 @@
 import { DIAMETER_STROKE, type CompressorVariant, type TubeDiameter } from '../data/plantTypes';
 import { REFRIGERANTS, type RefrigerantId } from '../data/refrigerants';
+import type { ValvePosition } from '../data/serviceValveScenarios';
 
 /**
  * Disegni SVG stilizzati (schematico tecnico, non fotorealistico) per i componenti
@@ -180,6 +181,43 @@ export function SuctionFilterSvg() {
       {/* freccia di senso di flusso */}
       <path d="M96 55 h20 M108 47 l8 8 l-8 8" fill="none" stroke={COPPER} strokeWidth="3" strokeLinecap="round" strokeLinejoin="round" />
       <text x="80" y="98" textAnchor="middle" className="piece-label">Filtro aspirazione (opz.)</text>
+    </svg>
+  );
+}
+
+const VALVE_STEM_LENGTH: Record<ValvePosition, number> = {
+  avanti: 6,
+  intermedia: 16,
+  indietro: 28,
+};
+
+export function ServiceValveSvg({ position }: { position: ValvePosition }) {
+  const stemLen = VALVE_STEM_LENGTH[position];
+
+  function row(y: number, color: string, label: string, key: string) {
+    return (
+      <g key={key} transform={`translate(0 ${y})`}>
+        {/* verso l'unità esterna */}
+        <line x1="4" y1="0" x2="46" y2="0" stroke={color} strokeWidth="7" strokeLinecap="round" />
+        {/* corpo valvola */}
+        <rect x="46" y="-16" width="94" height="32" rx="9" fill={GRAPHITE} stroke={METAL} strokeWidth="2" />
+        {/* verso l'unità interna */}
+        <line x1="140" y1="0" x2="182" y2="0" stroke={color} strokeWidth="7" strokeLinecap="round" />
+        {/* presa di servizio con tappo colorato */}
+        <line x1="93" y1="-16" x2="93" y2="-28" stroke={METAL} strokeWidth="4" />
+        <circle cx="93" cy="-32" r="7" fill={color} stroke={METAL_DARK} strokeWidth="1.5" />
+        {/* stelo di manovra (tige de commande), lunghezza = posizione */}
+        <line x1="68" y1="16" x2="68" y2={16 + stemLen} stroke={METAL_DARK} strokeWidth="5" strokeLinecap="round" />
+        <circle cx="68" cy={16 + stemLen + 6} r="6" fill={COPPER} stroke={METAL_DARK} strokeWidth="1.5" />
+        <text x="196" y="4" fontSize="12" fontWeight="700" fill={METAL} textAnchor="start">{label}</text>
+      </g>
+    );
+  }
+
+  return (
+    <svg viewBox="0 0 300 210" className="piece-svg" role="img" aria-label={`Valvole di servizio HP e BP, posizione ${position}`}>
+      {row(60, HP_RED, 'Valvola HP', 'hp')}
+      {row(160, BP_BLUE, 'Valvola BP', 'bp')}
     </svg>
   );
 }

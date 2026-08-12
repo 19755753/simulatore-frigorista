@@ -2,6 +2,7 @@ import { useMemo, useRef, useState } from 'react';
 import './App.css';
 import { CircuitCanvas } from './components/CircuitCanvas';
 import { ExerciseSrSc, type SrScResult } from './components/ExerciseSrSc';
+import { ExerciseValve } from './components/ExerciseValve';
 import { PtTable } from './components/PtTable';
 import { Slot } from './components/Slot';
 import { Toolbox, type ToolboxSection } from './components/Toolbox';
@@ -18,6 +19,7 @@ import {
 } from './data/components';
 import { COMPRESSOR_POWER, PLANT_TYPES, diameterGuideFor, type PlantTypeId } from './data/plantTypes';
 import { TEMP_RANGE, saturationBarAssoluti } from './data/refrigerants';
+import { VALVE_SCENARIOS, randomValveScenarioIndex, type ValvePosition } from './data/serviceValveScenarios';
 import {
   canAttachTube,
   canPlaceAux,
@@ -56,6 +58,9 @@ function App() {
   const [scAnswer, setScAnswer] = useState('');
   const [srResult, setSrResult] = useState<SrScResult | null>(null);
   const [scResult, setScResult] = useState<SrScResult | null>(null);
+  const [valveScenarioIndex, setValveScenarioIndex] = useState(() => randomValveScenarioIndex());
+  const [valvePosition, setValvePosition] = useState<ValvePosition | null>(null);
+  const [valveCheckedPosition, setValveCheckedPosition] = useState<ValvePosition | null>(null);
   const edgeCounter = useRef(0);
 
   const toolboxSections: ToolboxSection[] = useMemo(() => {
@@ -194,6 +199,17 @@ function App() {
     const val = parseFloat(scAnswer.replace(',', '.'));
     if (Number.isNaN(val)) return;
     setScResult({ correct: Math.abs(val - scOffset) <= SR_SC_TOLERANCE, expected: scOffset, userValue: val });
+  }
+
+  function regenerateValveExercise() {
+    setValveScenarioIndex((cur) => randomValveScenarioIndex(cur));
+    setValvePosition(null);
+    setValveCheckedPosition(null);
+  }
+
+  function handleCheckValve() {
+    if (valvePosition === null) return;
+    setValveCheckedPosition(valvePosition);
   }
 
   const fluid = selectedFluid(auxPlaced);
@@ -357,6 +373,15 @@ function App() {
               onRegenerate={regenerateExercise}
             />
           )}
+
+          <ExerciseValve
+            scenario={VALVE_SCENARIOS[valveScenarioIndex]}
+            position={valvePosition}
+            onSelectPosition={(p) => { setValvePosition(p); setValveCheckedPosition(null); }}
+            checkedPosition={valveCheckedPosition}
+            onCheck={handleCheckValve}
+            onRegenerate={regenerateValveExercise}
+          />
 
           <div className="messages-panel">
             {validation.isFullyCorrect && (
