@@ -342,12 +342,14 @@ st.markdown("---")
 
 st.header("🔮 Simulateur de Scénarios & Projections Financières")
 st.caption(
-    "Simulation de sensibilité, indépendante du modèle probabiliste ci-dessus : que "
-    "deviendraient le volume d'activité et le résultat net du dernier exercice si "
-    "l'un et l'autre variaient du même pourcentage ? Hypothèse simplificatrice -- "
-    "ce n'est pas une prévision financière réelle (qui dépendrait de la structure de "
-    "coûts, de la part de charges fixes/variables, etc.), mais un outil de simulation "
-    "directe et transparente pour tester rapidement un ordre de grandeur."
+    "Simulation de sensibilité, indépendante du modèle probabiliste ci-dessus : quel "
+    "impact aurait une variation du volume d'activité sur le résultat net du dernier "
+    "exercice ? Hypothèse simplificatrice de **charges 100% fixes** : toute variation "
+    "du chiffre d'affaires se répercute intégralement, en euros, sur le résultat net "
+    "-- une baisse d'activité aggrave donc toujours le résultat (qu'il soit déjà "
+    "bénéficiaire ou déficitaire), une hausse l'améliore toujours. C'est un scénario "
+    "de sensibilité maximale (le plus défavorable en cas de baisse), pas une "
+    "prévision réaliste qui tiendrait compte de charges variables."
 )
 
 variation_pct = st.slider(
@@ -358,10 +360,19 @@ variation_pct = st.slider(
 
 dernier_ca_connu = chiffres_affaires[-1]
 dernier_resultat_net_connu = resultats_nets[-1]
-facteur_variation = 1 + variation_pct / 100
 
-nouveau_ca_simule = dernier_ca_connu * facteur_variation
-nouveau_resultat_net_simule = dernier_resultat_net_connu * facteur_variation
+nouveau_ca_simule = dernier_ca_connu * (1 + variation_pct / 100)
+
+# Le résultat net simulé n'est pas obtenu en multipliant le résultat net par
+# le même facteur que le CA : cette approche naïve inverse le sens
+# économique dès que le résultat net de départ est négatif (une baisse
+# d'activité réduirait alors artificiellement la perte au lieu de
+# l'aggraver -- voir la discussion dans l'historique du projet). Avec
+# l'hypothèse de charges 100% fixes, la variation du CA (en euros) se
+# reporte intégralement, à l'identique, sur le résultat net : le signe de
+# l'effet ne dépend donc jamais du signe du résultat de départ.
+variation_ca_euros = dernier_ca_connu * (variation_pct / 100)
+nouveau_resultat_net_simule = dernier_resultat_net_connu + variation_ca_euros
 
 col_sim_1, col_sim_2 = st.columns(2)
 with col_sim_1:
