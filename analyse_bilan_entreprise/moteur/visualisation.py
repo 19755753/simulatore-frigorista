@@ -126,6 +126,7 @@ def graphique_evolution_historique(annees: list[int], resultats_nets: list[float
         title="Évolution du résultat net",
         xaxis_title="Année",
         yaxis_title="Résultat net (€)",
+        xaxis=dict(dtick=1, tickformat="d"),
         margin=dict(t=60, b=20, l=20, r=20),
         height=320,
     )
