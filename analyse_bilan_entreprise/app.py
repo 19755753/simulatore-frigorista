@@ -33,6 +33,54 @@ st.set_page_config(
 
 
 # ---------------------------------------------------------------------------
+# Écran de verrouillage par mot de passe
+# ---------------------------------------------------------------------------
+
+MOT_DE_PASSE_PAR_DEFAUT = "Olano2026"
+
+
+def _obtenir_mot_de_passe_attendu() -> str:
+    """Retourne le mot de passe attendu.
+
+    Priorité à ``st.secrets["MOT_DE_PASSE_APP"]`` s'il est défini (méthode
+    recommandée sur Streamlit Community Cloud : Settings > Secrets), ce qui
+    évite d'exposer le mot de passe en clair dans le dépôt public. À défaut,
+    la valeur par défaut ci-dessus est utilisée.
+    """
+    try:
+        return st.secrets.get("MOT_DE_PASSE_APP", MOT_DE_PASSE_PAR_DEFAUT)
+    except Exception:
+        return MOT_DE_PASSE_PAR_DEFAUT
+
+
+def _verifier_authentification() -> None:
+    """Bloque l'accès à l'application tant que le mot de passe correct n'a
+    pas été saisi. Interrompt l'exécution du script (``st.stop()``) tant que
+    l'utilisateur n'est pas authentifié."""
+    if st.session_state.get("authentifie", False):
+        return
+
+    st.title("🔒 Accès restreint")
+    st.caption("Cette application est protégée par mot de passe.")
+
+    with st.form("formulaire_authentification"):
+        mot_de_passe_saisi = st.text_input("Mot de passe", type="password")
+        soumis = st.form_submit_button("Se connecter")
+
+    if soumis:
+        if mot_de_passe_saisi == _obtenir_mot_de_passe_attendu():
+            st.session_state["authentifie"] = True
+            st.rerun()
+        else:
+            st.error("Mot de passe incorrect.")
+
+    st.stop()
+
+
+_verifier_authentification()
+
+
+# ---------------------------------------------------------------------------
 # Barre latérale : sélection de l'entreprise + facteur bayésien
 # ---------------------------------------------------------------------------
 
