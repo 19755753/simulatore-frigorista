@@ -326,3 +326,78 @@ st.caption(
     "hypothèses d'expert définies dans `moteur/bayes.py` (TABLE_VRAISEMBLANCES), "
     "pas des statistiques mesurées — elles sont ajustables selon le contexte métier."
 )
+
+st.markdown("---")
+
+# ---------------------------------------------------------------------------
+# Section informative : méthodologie
+# ---------------------------------------------------------------------------
+
+st.header("🔬 Méthodologie Mathématique & Scientifique")
+
+st.subheader("1. Chaînes de Markov (Inertie matricielle)")
+st.markdown(
+    """
+    Chaque exercice comptable est classé dans l'un de 4 états — **Bénéfice**,
+    **Équilibre**, **Moins de pertes**, **Plus de pertes** — selon la marge
+    nette et son évolution par rapport à l'exercice précédent. La probabilité
+    de passer d'un état à l'autre s'écrit, comme dans une chaîne de Markov
+    classique :
+    """
+)
+st.latex(r"P(X_{t+1} = j \mid X_t = i) = M_{ij}")
+st.markdown(
+    """
+    Avec seulement 3 bilans réels disponibles, une matrice de transition
+    estimée uniquement sur ces observations serait trop peu fiable
+    statistiquement. Le modèle applique donc un principe d'**inertie** : il
+    mélange la matrice de transition empirique (lissage de Laplace, pour
+    éviter les probabilités nulles) avec un vecteur d'inertie centré sur le
+    **dernier état observé**, orienté par la pente de la tendance du résultat
+    net (régression linéaire sur les 3 derniers exercices). Concrètement :
+    plus la trajectoire récente de l'entreprise est nette et confirmée, plus
+    le modèle attribue une probabilité forte à la persistance de cette
+    trajectoire — d'où le terme d'*inertie matricielle*.
+
+    ⚠️ Ce n'est pas une chaîne de Markov calibrée sur des données empiriques
+    à grande échelle : c'est une heuristique d'ingénierie construite pour
+    cette application, avec des paramètres documentés et ajustables dans
+    `moteur/transition.py`.
+    """
+)
+
+st.subheader("2. Théorème de Bayes (Facteur humain)")
+st.markdown(
+    """
+    Les probabilités calculées ci-dessus (« probabilités historiques »)
+    reflètent uniquement les chiffres comptables. Or deux entreprises avec
+    la même trajectoire financière peuvent avoir des perspectives très
+    différentes selon leur contexte opérationnel réel. Les réponses aux
+    deux facteurs de terrain dans la barre latérale (nouveaux clients,
+    blocage des flux de transport par la filiale Vedène) corrigent donc ces
+    probabilités via le théorème de Bayes :
+    """
+)
+st.latex(r"P(S \mid E) = \frac{P(E \mid S)\,P(S)}{P(E)}")
+st.markdown(
+    """
+    où **S** est un scénario (Bénéfice, Équilibre, Moins de pertes, Plus de
+    pertes), **P(S)** sa probabilité historique (calculée à l'étape 1), et
+    **P(E | S)** la vraisemblance de la réponse observée si ce
+    scénario se réalisait. Les deux facteurs sont supposés indépendants
+    conditionnellement au scénario (hypothèse dite « naïve », classique pour
+    combiner plusieurs indices) : leurs vraisemblances se multiplient avant
+    normalisation pour obtenir la probabilité corrigée finale, affichée dans
+    le graphique en couronne ci-dessus.
+
+    Dès qu'un facteur est modifié dans la barre latérale, Streamlit relance
+    l'intégralité du calcul et le graphique se met à jour **instantanément**
+    — aucune étape de validation supplémentaire n'est nécessaire.
+
+    ⚠️ Les vraisemblances P(E | S) sont des hypothèses d'expert
+    (voir `moteur/bayes.py`, `TABLE_VRAISEMBLANCES`), pas des probabilités
+    mesurées empiriquement : le théorème de Bayes lui-même est appliqué
+    correctement, mais ses données d'entrée restent des estimations
+    métier, ajustables selon le contexte.
+    """
+)
