@@ -114,6 +114,13 @@ reponses_bayesiennes = {
     "flux_bloques": reponse_flux_bloques,
 }
 
+st.sidebar.markdown("---")
+if st.sidebar.button("🗑️ Réinitialiser les données"):
+    for _i in range(3):
+        st.session_state[f"ca_{_i}"] = 0.0
+        st.session_state[f"rn_{_i}"] = 0.0
+st.sidebar.caption("Remet les 3 champs de chiffre d'affaires et de résultat net à 0,00 €.")
+
 
 # ---------------------------------------------------------------------------
 # Recherche d'entreprise (identité légale réelle)
@@ -326,6 +333,59 @@ st.caption(
     "hypothèses d'expert définies dans `moteur/bayes.py` (TABLE_VRAISEMBLANCES), "
     "pas des statistiques mesurées — elles sont ajustables selon le contexte métier."
 )
+
+st.markdown("---")
+
+# ---------------------------------------------------------------------------
+# 4. Simulateur de scénarios & projections financières
+# ---------------------------------------------------------------------------
+
+st.header("🔮 Simulateur de Scénarios & Projections Financières")
+st.caption(
+    "Simulation de sensibilité, indépendante du modèle probabiliste ci-dessus : que "
+    "deviendraient le volume d'activité et le résultat net du dernier exercice si "
+    "l'un et l'autre variaient du même pourcentage ? Hypothèse simplificatrice -- "
+    "ce n'est pas une prévision financière réelle (qui dépendrait de la structure de "
+    "coûts, de la part de charges fixes/variables, etc.), mais un outil de simulation "
+    "directe et transparente pour tester rapidement un ordre de grandeur."
+)
+
+variation_pct = st.slider(
+    "Variation attendue du prochain exercice (%)",
+    min_value=-100, max_value=100, value=0, step=5,
+    format="%d%%",
+)
+
+dernier_ca_connu = chiffres_affaires[-1]
+dernier_resultat_net_connu = resultats_nets[-1]
+facteur_variation = 1 + variation_pct / 100
+
+nouveau_ca_simule = dernier_ca_connu * facteur_variation
+nouveau_resultat_net_simule = dernier_resultat_net_connu * facteur_variation
+
+col_sim_1, col_sim_2 = st.columns(2)
+with col_sim_1:
+    st.metric(
+        f"Volume d'activité simulé (base {annees[-1]}, {variation_pct:+d} %)",
+        f"{nouveau_ca_simule:,.0f} €",
+        delta=f"{nouveau_ca_simule - dernier_ca_connu:,.0f} €",
+    )
+
+couleur_resultat_simule = "#2ECC71" if nouveau_resultat_net_simule >= 0 else "#E74C3C"
+libelle_resultat_simule = "Bénéfice probable" if nouveau_resultat_net_simule >= 0 else "Perte probable"
+with col_sim_2:
+    st.markdown(
+        f"""
+        <div style="background-color:{couleur_resultat_simule}22;border:2px solid {couleur_resultat_simule};
+                    border-radius:10px;padding:1rem;text-align:center;">
+            <div style="font-size:0.9rem;color:#555;">{libelle_resultat_simule} ({variation_pct:+d} %)</div>
+            <div style="font-size:1.8rem;font-weight:700;color:{couleur_resultat_simule};">
+                {nouveau_resultat_net_simule:,.0f} €
+            </div>
+        </div>
+        """,
+        unsafe_allow_html=True,
+    )
 
 st.markdown("---")
 
