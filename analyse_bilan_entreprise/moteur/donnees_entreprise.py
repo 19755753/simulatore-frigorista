@@ -263,12 +263,20 @@ def _construire_entreprise_depuis_pappers(payload: dict) -> Entreprise:
     )
 
 
+@st.cache_data(show_spinner=False)
 def recuperer_via_api_pappers(siret: str) -> Entreprise | None:
     """Interroge l'API Pappers si ``PAPPERS_API_KEY`` est défini.
 
     Retourne ``None`` si la clé n'est pas configurée, si l'entreprise est
     introuvable, ou si l'appel échoue (réseau, quota, clé invalide) -- dans
     tous les cas l'appelant doit alors se rabattre sur la base simulée.
+
+    Seul cet appel réseau est mis en cache (utile : coûteux et stable). Le
+    dispatcher ``obtenir_entreprise`` ci-dessous n'est volontairement PAS mis
+    en cache : la base simulée est un simple accès dictionnaire en mémoire
+    (coût négligeable), et la mettre en cache exposerait l'application au
+    risque de servir un objet ``Entreprise`` figé d'une version antérieure
+    du code après une mise à jour du dépôt (ex. un attribut ajouté depuis).
     """
     cle_api = os.environ.get("PAPPERS_API_KEY")
     if not cle_api:
@@ -290,7 +298,6 @@ def recuperer_via_api_pappers(siret: str) -> Entreprise | None:
 # ---------------------------------------------------------------------------
 
 
-@st.cache_data(show_spinner=False)
 def obtenir_entreprise(siret: str) -> tuple[Entreprise | None, str]:
     """Récupère une entreprise par SIRET.
 

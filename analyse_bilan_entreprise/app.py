@@ -149,14 +149,16 @@ if entreprise is None:
     )
     st.stop()
 
-if source == "simulation" and entreprise.donnees_fictives:
+donnees_fictives = getattr(entreprise, "donnees_fictives", True)
+
+if source == "simulation" and donnees_fictives:
     st.warning(
         f"⚠️ **Mode démonstration** : les données de « {entreprise.denomination} » "
         "sont **simulées** (données fictives à but pédagogique), pas des données "
         "réelles issues de l'INPI ou de Pappers. Pour connecter l'API réelle, "
         "définissez la variable d'environnement `PAPPERS_API_KEY`."
     )
-elif source == "simulation" and not entreprise.donnees_fictives:
+elif source == "simulation" and not donnees_fictives:
     st.info(
         f"ℹ️ **Données réelles partielles** : le chiffre d'affaires et le résultat net de "
         f"« {entreprise.denomination} » sont des données réelles fournies manuellement "
