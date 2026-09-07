@@ -5,25 +5,31 @@ Lancement :
     streamlit run app.py
 
 Architecture (voir le paquet ``moteur/``) :
-    1. donnees_entreprise -- récupération des données (API Pappers ou simulation)
-    2. zscore             -- Z''-Score d'Altman (probabilité de défaillance)
-    3. transition          -- probabilités de transition par inertie matricielle
-    4. bayes                -- correction bayésienne à partir du facteur humain
-    5. visualisation          -- graphiques Plotly
+    1. annuaire_entreprises -- identité légale réelle via l'API publique
+                                gratuite du gouvernement français
+                                (recherche-entreprises.api.gouv.fr)
+    2. donnees_financieres  -- chiffre d'affaires / résultat net réels,
+                                via l'API Pappers si configurée, sinon un
+                                unique jeu de données vérifié (Olano
+                                Provence) -- jamais de valeur inventée
+    3. transition           -- probabilités de transition par inertie
+                                matricielle, à partir des 3 derniers
+                                exercices réels
+    4. bayes                -- correction bayésienne à partir de 2 facteurs
+                                humains (sidebar)
+    5. visualisation        -- graphique en couronne (donut) Plotly
 
-Avertissement : cet outil est une aide à la décision pédagogique. Le Z-Score
-d'Altman est une méthode académique publiée (Altman, 1995) ; le modèle de
-transition par inertie et les vraisemblances bayésiennes sont des
-heuristiques d'ingénierie construites pour cette application, pas des
-statistiques mesurées empiriquement -- voir les docstrings des modules
-``transition.py`` et ``bayes.py`` pour le détail des hypothèses.
+Avertissement méthodologique : le modèle de transition par inertie et les
+vraisemblances bayésiennes sont des heuristiques d'ingénierie construites
+pour cette application, pas des statistiques mesurées empiriquement -- voir
+les docstrings de ``moteur/transition.py`` et ``moteur/bayes.py``.
 """
 
 from __future__ import annotations
 
 import streamlit as st
 
-from moteur import bayes, donnees_entreprise, transition, visualisation, zscore
+from moteur import annuaire_entreprises, bayes, donnees_financieres, transition, visualisation
 
 st.set_page_config(
     page_title="Analyse prédictive de bilans d'entreprises",
@@ -81,118 +87,129 @@ _verifier_authentification()
 
 
 # ---------------------------------------------------------------------------
-# Barre latérale : sélection de l'entreprise + facteur bayésien
+# Barre latérale : facteur bayésien
 # ---------------------------------------------------------------------------
 
-st.sidebar.header("🏢 Entreprise")
-
-entreprises_demo = donnees_entreprise.liste_entreprises_demo()
-options_siret = list(entreprises_demo.keys()) + ["Autre SIRET (saisie manuelle)"]
-etiquettes = {siret: f"{entreprises_demo[siret]} — {siret}" for siret in entreprises_demo}
-etiquettes["Autre SIRET (saisie manuelle)"] = "Autre SIRET (saisie manuelle)"
-
-choix = st.sidebar.selectbox(
-    "Entreprise (démonstration)",
-    options=options_siret,
-    format_func=lambda s: etiquettes[s],
-)
-
-if choix == "Autre SIRET (saisie manuelle)":
-    siret_saisi = st.sidebar.text_input("Numéro SIRET (14 chiffres)", max_chars=14)
-    siret_actif = siret_saisi.strip()
-else:
-    siret_actif = choix
-
-st.sidebar.markdown("---")
 st.sidebar.header("🧠 Facteur bayésien")
 st.sidebar.caption(
     "Ces réponses corrigent les probabilités historiques via le théorème de Bayes."
 )
 
-reponse_nouveaux_clients = st.sidebar.toggle("De nouveaux clients ont été acquis ?", value=False)
-reponse_flux_bloques = st.sidebar.toggle(
-    "Flux de transport bloqués par une autre filiale (ex : Vedène) ?", value=False
+reponse_nouveaux_clients = (
+    st.sidebar.radio("De nouveaux clients ont-ils été acquis ?", ["Non", "Oui"], horizontal=True) == "Oui"
 )
-reponse_projet_fusion = st.sidebar.toggle(
-    "Projet de fusion / optimisation des coûts en cours ?", value=False
+reponse_flux_bloques = (
+    st.sidebar.radio(
+        "Les flux de transport sont-ils bloqués par une autre filiale (Vedène) ?",
+        ["Non", "Oui"],
+        horizontal=True,
+    )
+    == "Oui"
 )
 
 reponses_bayesiennes = {
     "nouveaux_clients": reponse_nouveaux_clients,
     "flux_bloques": reponse_flux_bloques,
-    "projet_fusion": reponse_projet_fusion,
 }
 
 
 # ---------------------------------------------------------------------------
-# Corps principal
+# Corps principal -- recherche d'entreprise
 # ---------------------------------------------------------------------------
 
 st.title("📊 Analyse prédictive et probabiliste de bilans d'entreprises")
 st.caption(
-    "Application d'aide à la décision — Z-Score d'Altman, modèle d'inertie "
-    "matricielle et correction bayésienne."
+    "Identité légale en temps réel (API publique gouvernementale) + données "
+    "financières réelles -- modèle d'inertie matricielle et correction bayésienne."
 )
 
-if not siret_actif:
-    st.info("Renseignez un SIRET dans la barre latérale pour lancer l'analyse.")
+with st.form("formulaire_recherche"):
+    requete_utilisateur = st.text_input(
+        "Nom de l'entreprise ou numéro SIRET",
+        placeholder="ex. : Olano Provence, ou 552032534...",
+        value=st.session_state.get("derniere_requete", ""),
+    )
+    lancer_recherche = st.form_submit_button("Rechercher")
+
+if lancer_recherche and requete_utilisateur.strip():
+    st.session_state["derniere_requete"] = requete_utilisateur.strip()
+
+requete_active = st.session_state.get("derniere_requete", "")
+
+if not requete_active:
+    st.info("Saisissez le nom d'une entreprise française ou son SIRET pour lancer l'analyse.")
     st.stop()
 
-entreprise, source = donnees_entreprise.obtenir_entreprise(siret_actif)
+with st.spinner(f"Recherche de « {requete_active} » sur le registre public (api.gouv.fr)..."):
+    identite = annuaire_entreprises.rechercher_entreprise(requete_active)
 
-if entreprise is None:
+if identite is None:
     st.error(
-        f"Aucune donnée trouvée pour le SIRET « {siret_actif} ». "
-        "Sélectionnez une entreprise de démonstration dans la barre latérale, "
-        "ou configurez la variable d'environnement PAPPERS_API_KEY pour "
-        "interroger l'API réelle."
+        f"❌ Entreprise introuvable pour « {requete_active} » sur le registre public "
+        "(recherche-entreprises.api.gouv.fr). Vérifiez l'orthographe ou le numéro SIRET saisi."
     )
     st.stop()
 
-donnees_fictives = getattr(entreprise, "donnees_fictives", True)
+st.success(f"✅ Entreprise trouvée sur le registre public : « {identite.denomination} »")
 
-if source == "simulation" and donnees_fictives:
-    st.warning(
-        f"⚠️ **Mode démonstration** : les données de « {entreprise.denomination} » "
-        "sont **simulées** (données fictives à but pédagogique), pas des données "
-        "réelles issues de l'INPI ou de Pappers. Pour connecter l'API réelle, "
-        "définissez la variable d'environnement `PAPPERS_API_KEY`."
-    )
-elif source == "simulation" and not donnees_fictives:
-    st.info(
-        f"ℹ️ **Données réelles partielles** : le chiffre d'affaires et le résultat net de "
-        f"« {entreprise.denomination} » sont des données réelles fournies manuellement "
-        "(hors API INPI/Pappers). Les autres postes du bilan (capitaux propres, dettes, "
-        "actif/passif circulant, EBIT, report à nouveau) ne sont pas renseignés : le "
-        "Z-Score d'Altman n'est donc pas calculable pour cette entreprise (voir section 2.1)."
-    )
-elif source == "api_pappers":
-    st.success(f"✅ Données récupérées via l'API Pappers pour « {entreprise.denomination} ».")
-
-exercices_tries = sorted(entreprise.exercices, key=lambda e: e.annee)
-if len(exercices_tries) < 2:
-    st.error("Au moins 2 exercices comptables sont nécessaires pour cette analyse.")
-    st.stop()
-
-col_identite_1, col_identite_2, col_identite_3 = st.columns(3)
-col_identite_1.metric("Dénomination", entreprise.denomination)
-col_identite_2.metric("Forme juridique", entreprise.forme_juridique or "N/C")
-col_identite_3.metric("Code NAF", entreprise.code_naf or "N/C")
+col_identite_1, col_identite_2, col_identite_3, col_identite_4 = st.columns(4)
+col_identite_1.metric("Dénomination", identite.denomination)
+col_identite_2.metric("SIRET", identite.siret)
+col_identite_3.metric("Code NAF", identite.code_naf)
+col_identite_4.metric("Commune du siège", identite.commune_siege)
+st.caption(
+    "Champs renvoyés tels quels par l'API publique recherche-entreprises.api.gouv.fr "
+    f"(catégorie juridique, code INSEE : {identite.categorie_juridique_code})."
+)
 
 st.markdown("---")
 
 # ---------------------------------------------------------------------------
-# 1. Analyse historique
+# 1. Données financières réelles
 # ---------------------------------------------------------------------------
 
-st.header("1. Analyse historique")
+st.header("1. Données financières")
 
-historique_df = entreprise.historique_dataframe()
-st.dataframe(historique_df, use_container_width=True, hide_index=True)
+exercices, source_financiere = donnees_financieres.obtenir_donnees_financieres(
+    identite.denomination, identite.siret
+)
 
+if exercices is None:
+    st.error(
+        "❌ **Données financières non disponibles sur les registres publics.** "
+        "Aucune valeur n'est affichée ou estimée pour cette entreprise : ni l'API Pappers "
+        "(non configurée ou sans résultat) ni la base vérifiée manuellement ne contiennent "
+        "ses comptes. Pour activer l'API Pappers, définissez la variable d'environnement "
+        "`PAPPERS_API_KEY`."
+    )
+    st.stop()
+
+if source_financiere == "api_pappers":
+    st.success("✅ Chiffre d'affaires et résultat net récupérés via l'API Pappers.")
+else:
+    st.info(
+        "ℹ️ Chiffre d'affaires et résultat net : données réelles vérifiées manuellement "
+        "(l'API Pappers n'est pas configurée -- définissez `PAPPERS_API_KEY` pour l'activer)."
+    )
+
+if len(exercices) < 2:
+    st.error("Au moins 2 exercices comptables sont nécessaires pour cette analyse ; un seul est disponible.")
+    st.stop()
+
+exercices_tries = sorted(exercices, key=lambda e: e.annee)
 annees = [ex.annee for ex in exercices_tries]
 resultats_nets = [ex.resultat_net for ex in exercices_tries]
 chiffres_affaires = [ex.chiffre_affaires for ex in exercices_tries]
+
+st.dataframe(
+    {
+        "Année": annees,
+        "Chiffre d'affaires (€)": chiffres_affaires,
+        "Résultat net (€)": resultats_nets,
+    },
+    use_container_width=True,
+    hide_index=True,
+)
 
 st.plotly_chart(
     visualisation.graphique_evolution_historique(annees, resultats_nets),
@@ -202,83 +219,10 @@ st.plotly_chart(
 st.markdown("---")
 
 # ---------------------------------------------------------------------------
-# 2. Moteur mathématique -- Z-Score d'Altman
+# 2. Probabilités de transition (inertie matricielle)
 # ---------------------------------------------------------------------------
 
-st.header("2. Moteur mathématique")
-
-st.subheader("2.1. Z-Score d'Altman (probabilité de défaillance)")
-
-dernier_exercice = exercices_tries[-1]
-
-if not dernier_exercice.donnees_bilan_completes:
-    st.info(
-        "ℹ️ Le Z-Score d'Altman ne peut pas être calculé pour cette entreprise : "
-        "les postes de bilan nécessaires (capitaux propres, dettes, actif/passif "
-        "circulant, résultat d'exploitation, report à nouveau) ne sont pas "
-        "renseignés pour l'exercice le plus récent. Aucune valeur n'est estimée ou "
-        "inventée à leur place."
-    )
-else:
-    try:
-        resultat_z = zscore.calculer_zscore_altman(
-            actif_total=dernier_exercice.actif_total,
-            actif_circulant=dernier_exercice.actif_circulant,
-            passif_circulant=dernier_exercice.passif_circulant,
-            report_a_nouveau=dernier_exercice.report_a_nouveau,
-            resultat_exploitation=dernier_exercice.resultat_exploitation,
-            capitaux_propres=dernier_exercice.capitaux_propres,
-            dettes_totales=dernier_exercice.dettes_totales,
-        )
-    except ValueError as erreur:
-        st.error(f"Impossible de calculer le Z-Score : {erreur}")
-        st.stop()
-
-    couleur_zone = visualisation.COULEURS_ZONE_ZSCORE[resultat_z.zone]
-    col_zscore_1, col_zscore_2 = st.columns([1, 2])
-    with col_zscore_1:
-        st.markdown(
-            f"""
-            <div style="background-color:{couleur_zone}22;border:2px solid {couleur_zone};
-                        border-radius:10px;padding:1.2rem;text-align:center;">
-                <div style="font-size:0.9rem;color:#555;">Z''-Score d'Altman ({dernier_exercice.annee})</div>
-                <div style="font-size:2.2rem;font-weight:700;color:{couleur_zone};">{resultat_z.z_score:.2f}</div>
-                <div style="font-size:1rem;font-weight:600;color:{couleur_zone};">Zone {resultat_z.zone}</div>
-            </div>
-            """,
-            unsafe_allow_html=True,
-        )
-    with col_zscore_2:
-        st.markdown(
-            "- **Zone Verte** (Z'' > 2.6) : risque de défaillance faible\n"
-            "- **Zone Jaune** (1.1 ≤ Z'' ≤ 2.6) : zone d'incertitude, vigilance requise\n"
-            "- **Zone Rouge** (Z'' < 1.1) : risque de défaillance élevé"
-        )
-
-    with st.expander("Détail des composantes du Z''-Score"):
-        st.table(
-            {
-                "Composante": [
-                    "X1 — Fonds de roulement / Actif total",
-                    "X2 — Réserves (report à nouveau) / Actif total",
-                    "X3 — Résultat d'exploitation / Actif total",
-                    "X4 — Capitaux propres / Dettes totales",
-                ],
-                "Valeur": [
-                    f"{resultat_z.x1_fonds_roulement:.3f}",
-                    f"{resultat_z.x2_reserves:.3f}",
-                    f"{resultat_z.x3_rentabilite_exploitation:.3f}",
-                    f"{resultat_z.x4_solvabilite:.3f}",
-                ],
-            }
-        )
-        st.caption(
-            "Modèle Z''-Score d'Altman pour entreprises non-manufacturières / "
-            "marchés émergents (Altman, Hartzell & Peck, 1995)."
-        )
-
-st.markdown("")
-st.subheader("2.2. Probabilités de transition (inertie matricielle)")
+st.header("2. Probabilités de transition (inertie matricielle)")
 
 resultat_transition = transition.calculer_transition_inertie(resultats_nets, chiffres_affaires)
 
@@ -310,7 +254,7 @@ with col_trans_2:
 st.markdown("---")
 
 # ---------------------------------------------------------------------------
-# 3. et 4. Correction bayésienne et résultat final
+# 3. Correction bayésienne et résultat final
 # ---------------------------------------------------------------------------
 
 st.header("3. Correction bayésienne et résultat final")
@@ -352,13 +296,6 @@ with col_bayes_donut:
         ),
         use_container_width=True,
     )
-
-st.plotly_chart(
-    visualisation.graphique_barres_comparaison(
-        resultat_bayes.probabilites_anterieures, resultat_bayes.probabilites_posterieures
-    ),
-    use_container_width=True,
-)
 
 st.caption(
     "Les vraisemblances utilisées pour la correction bayésienne sont des "
