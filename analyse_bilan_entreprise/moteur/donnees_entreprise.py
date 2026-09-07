@@ -39,28 +39,47 @@ class ExerciceComptable:
     """Postes comptables d'un exercice, tels que fournis par un extrait de
     bilan complet (compte de résultat + bilan actif/passif).
 
-    Les 4 postes demandés par le cahier des charges (chiffre d'affaires,
-    résultat net, capitaux propres, dettes) sont complétés par les postes
-    strictement nécessaires au calcul rigoureux du Z''-Score d'Altman
-    (actif total, actif circulant, passif circulant, résultat
-    d'exploitation, report à nouveau). Tous ces postes figurent dans un
-    extrait de bilan complet INPI/Pappers standard.
+    Seuls ``chiffre_affaires`` et ``resultat_net`` sont obligatoires. Les
+    autres postes (capitaux propres, dettes, actif/passif circulant,
+    résultat d'exploitation, report à nouveau) sont optionnels : ils sont
+    nécessaires au calcul du Z''-Score d'Altman et à l'affichage complet du
+    tableau historique, mais une entreprise peut être ajoutée avec des
+    données réelles partielles (ex. seulement CA et résultat net connus)
+    plutôt que de fabriquer des valeurs manquantes. Utiliser
+    ``donnees_bilan_completes`` pour savoir si le Z-Score est calculable.
     """
 
     annee: int
     chiffre_affaires: float
     resultat_net: float
-    capitaux_propres: float
-    dettes_totales: float
-    actif_circulant: float
-    passif_circulant: float
-    resultat_exploitation: float  # EBIT
-    report_a_nouveau: float  # réserves / résultats cumulés non distribués
+    capitaux_propres: float | None = None
+    dettes_totales: float | None = None
+    actif_circulant: float | None = None
+    passif_circulant: float | None = None
+    resultat_exploitation: float | None = None  # EBIT
+    report_a_nouveau: float | None = None  # réserves / résultats cumulés non distribués
 
     @property
-    def actif_total(self) -> float:
-        """Total du bilan (actif = passif = capitaux propres + dettes)."""
+    def actif_total(self) -> float | None:
+        """Total du bilan (actif = passif = capitaux propres + dettes).
+
+        Retourne ``None`` si l'un des deux postes n'est pas renseigné.
+        """
+        if self.capitaux_propres is None or self.dettes_totales is None:
+            return None
         return self.capitaux_propres + self.dettes_totales
+
+    @property
+    def donnees_bilan_completes(self) -> bool:
+        """True si tous les postes nécessaires au Z-Score d'Altman sont renseignés."""
+        return None not in (
+            self.capitaux_propres,
+            self.dettes_totales,
+            self.actif_circulant,
+            self.passif_circulant,
+            self.resultat_exploitation,
+            self.report_a_nouveau,
+        )
 
 
 @dataclass
@@ -70,17 +89,24 @@ class Entreprise:
     forme_juridique: str
     code_naf: str
     exercices: list[ExerciceComptable] = field(default_factory=list)
+    # True par défaut : entreprises de la base de démonstration (fictives).
+    # Mettre à False pour une entreprise réelle ajoutée manuellement, même
+    # si ses données sont incomplètes -- pour ne jamais afficher à tort
+    # l'avertissement "données fictives" sur des chiffres réels.
+    donnees_fictives: bool = True
 
     def historique_dataframe(self) -> pd.DataFrame:
         """Retourne l'historique des 4 indicateurs demandés sous forme de
-        DataFrame pandas, trié par année croissante."""
+        DataFrame pandas, trié par année croissante. Les postes non
+        renseignés (entreprise à données réelles partielles) sont affichés
+        comme "N/D" plutôt que d'être fabriqués."""
         lignes = [
             {
                 "Année": ex.annee,
                 "Chiffre d'affaires (€)": ex.chiffre_affaires,
                 "Résultat net (€)": ex.resultat_net,
-                "Capitaux propres (€)": ex.capitaux_propres,
-                "Dettes (€)": ex.dettes_totales,
+                "Capitaux propres (€)": ex.capitaux_propres if ex.capitaux_propres is not None else "N/D",
+                "Dettes (€)": ex.dettes_totales if ex.dettes_totales is not None else "N/D",
             }
             for ex in sorted(self.exercices, key=lambda e: e.annee)
         ]
@@ -168,6 +194,27 @@ _BASE_SIMULEE: dict[str, Entreprise] = {
                 actif_circulant=258_000, passif_circulant=228_000,
                 resultat_exploitation=9_000, report_a_nouveau=21_000,
             ),
+        ],
+    ),
+    # Entreprise réelle ajoutée à la demande de l'utilisateur. Seuls le
+    # chiffre d'affaires et le résultat net ont été communiqués -- les
+    # autres postes du bilan (capitaux propres, dettes, actif/passif
+    # circulant, EBIT, report à nouveau) ne sont PAS renseignés et ne sont
+    # donc pas fabriqués : le Z-Score d'Altman est indisponible pour cette
+    # entreprise tant que ces données ne sont pas fournies (voir app.py).
+    # "olano-provence" n'est pas un numéro SIRET réel : aucun SIRET n'a été
+    # communiqué pour cette entreprise, cet identifiant est un simple alias
+    # interne.
+    "olano-provence": Entreprise(
+        siret="Non communiqué",
+        denomination="Olano Provence",
+        forme_juridique="",
+        code_naf="",
+        donnees_fictives=False,
+        exercices=[
+            ExerciceComptable(annee=2022, chiffre_affaires=32_100_000, resultat_net=0),
+            ExerciceComptable(annee=2023, chiffre_affaires=18_100_000, resultat_net=-1_190_000),
+            ExerciceComptable(annee=2024, chiffre_affaires=8_980_000, resultat_net=-2_190_000),
         ],
     ),
 }

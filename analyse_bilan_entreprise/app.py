@@ -149,12 +149,20 @@ if entreprise is None:
     )
     st.stop()
 
-if source == "simulation":
+if source == "simulation" and entreprise.donnees_fictives:
     st.warning(
         f"⚠️ **Mode démonstration** : les données de « {entreprise.denomination} » "
         "sont **simulées** (données fictives à but pédagogique), pas des données "
         "réelles issues de l'INPI ou de Pappers. Pour connecter l'API réelle, "
         "définissez la variable d'environnement `PAPPERS_API_KEY`."
+    )
+elif source == "simulation" and not entreprise.donnees_fictives:
+    st.info(
+        f"ℹ️ **Données réelles partielles** : le chiffre d'affaires et le résultat net de "
+        f"« {entreprise.denomination} » sont des données réelles fournies manuellement "
+        "(hors API INPI/Pappers). Les autres postes du bilan (capitaux propres, dettes, "
+        "actif/passif circulant, EBIT, report à nouveau) ne sont pas renseignés : le "
+        "Z-Score d'Altman n'est donc pas calculable pour cette entreprise (voir section 2.1)."
     )
 elif source == "api_pappers":
     st.success(f"✅ Données récupérées via l'API Pappers pour « {entreprise.denomination} ».")
@@ -200,62 +208,72 @@ st.header("2. Moteur mathématique")
 st.subheader("2.1. Z-Score d'Altman (probabilité de défaillance)")
 
 dernier_exercice = exercices_tries[-1]
-try:
-    resultat_z = zscore.calculer_zscore_altman(
-        actif_total=dernier_exercice.actif_total,
-        actif_circulant=dernier_exercice.actif_circulant,
-        passif_circulant=dernier_exercice.passif_circulant,
-        report_a_nouveau=dernier_exercice.report_a_nouveau,
-        resultat_exploitation=dernier_exercice.resultat_exploitation,
-        capitaux_propres=dernier_exercice.capitaux_propres,
-        dettes_totales=dernier_exercice.dettes_totales,
-    )
-except ValueError as erreur:
-    st.error(f"Impossible de calculer le Z-Score : {erreur}")
-    st.stop()
 
-couleur_zone = visualisation.COULEURS_ZONE_ZSCORE[resultat_z.zone]
-col_zscore_1, col_zscore_2 = st.columns([1, 2])
-with col_zscore_1:
-    st.markdown(
-        f"""
-        <div style="background-color:{couleur_zone}22;border:2px solid {couleur_zone};
-                    border-radius:10px;padding:1.2rem;text-align:center;">
-            <div style="font-size:0.9rem;color:#555;">Z''-Score d'Altman ({dernier_exercice.annee})</div>
-            <div style="font-size:2.2rem;font-weight:700;color:{couleur_zone};">{resultat_z.z_score:.2f}</div>
-            <div style="font-size:1rem;font-weight:600;color:{couleur_zone};">Zone {resultat_z.zone}</div>
-        </div>
-        """,
-        unsafe_allow_html=True,
+if not dernier_exercice.donnees_bilan_completes:
+    st.info(
+        "ℹ️ Le Z-Score d'Altman ne peut pas être calculé pour cette entreprise : "
+        "les postes de bilan nécessaires (capitaux propres, dettes, actif/passif "
+        "circulant, résultat d'exploitation, report à nouveau) ne sont pas "
+        "renseignés pour l'exercice le plus récent. Aucune valeur n'est estimée ou "
+        "inventée à leur place."
     )
-with col_zscore_2:
-    st.markdown(
-        "- **Zone Verte** (Z'' > 2.6) : risque de défaillance faible\n"
-        "- **Zone Jaune** (1.1 ≤ Z'' ≤ 2.6) : zone d'incertitude, vigilance requise\n"
-        "- **Zone Rouge** (Z'' < 1.1) : risque de défaillance élevé"
-    )
+else:
+    try:
+        resultat_z = zscore.calculer_zscore_altman(
+            actif_total=dernier_exercice.actif_total,
+            actif_circulant=dernier_exercice.actif_circulant,
+            passif_circulant=dernier_exercice.passif_circulant,
+            report_a_nouveau=dernier_exercice.report_a_nouveau,
+            resultat_exploitation=dernier_exercice.resultat_exploitation,
+            capitaux_propres=dernier_exercice.capitaux_propres,
+            dettes_totales=dernier_exercice.dettes_totales,
+        )
+    except ValueError as erreur:
+        st.error(f"Impossible de calculer le Z-Score : {erreur}")
+        st.stop()
 
-with st.expander("Détail des composantes du Z''-Score"):
-    st.table(
-        {
-            "Composante": [
-                "X1 — Fonds de roulement / Actif total",
-                "X2 — Réserves (report à nouveau) / Actif total",
-                "X3 — Résultat d'exploitation / Actif total",
-                "X4 — Capitaux propres / Dettes totales",
-            ],
-            "Valeur": [
-                f"{resultat_z.x1_fonds_roulement:.3f}",
-                f"{resultat_z.x2_reserves:.3f}",
-                f"{resultat_z.x3_rentabilite_exploitation:.3f}",
-                f"{resultat_z.x4_solvabilite:.3f}",
-            ],
-        }
-    )
-    st.caption(
-        "Modèle Z''-Score d'Altman pour entreprises non-manufacturières / "
-        "marchés émergents (Altman, Hartzell & Peck, 1995)."
-    )
+    couleur_zone = visualisation.COULEURS_ZONE_ZSCORE[resultat_z.zone]
+    col_zscore_1, col_zscore_2 = st.columns([1, 2])
+    with col_zscore_1:
+        st.markdown(
+            f"""
+            <div style="background-color:{couleur_zone}22;border:2px solid {couleur_zone};
+                        border-radius:10px;padding:1.2rem;text-align:center;">
+                <div style="font-size:0.9rem;color:#555;">Z''-Score d'Altman ({dernier_exercice.annee})</div>
+                <div style="font-size:2.2rem;font-weight:700;color:{couleur_zone};">{resultat_z.z_score:.2f}</div>
+                <div style="font-size:1rem;font-weight:600;color:{couleur_zone};">Zone {resultat_z.zone}</div>
+            </div>
+            """,
+            unsafe_allow_html=True,
+        )
+    with col_zscore_2:
+        st.markdown(
+            "- **Zone Verte** (Z'' > 2.6) : risque de défaillance faible\n"
+            "- **Zone Jaune** (1.1 ≤ Z'' ≤ 2.6) : zone d'incertitude, vigilance requise\n"
+            "- **Zone Rouge** (Z'' < 1.1) : risque de défaillance élevé"
+        )
+
+    with st.expander("Détail des composantes du Z''-Score"):
+        st.table(
+            {
+                "Composante": [
+                    "X1 — Fonds de roulement / Actif total",
+                    "X2 — Réserves (report à nouveau) / Actif total",
+                    "X3 — Résultat d'exploitation / Actif total",
+                    "X4 — Capitaux propres / Dettes totales",
+                ],
+                "Valeur": [
+                    f"{resultat_z.x1_fonds_roulement:.3f}",
+                    f"{resultat_z.x2_reserves:.3f}",
+                    f"{resultat_z.x3_rentabilite_exploitation:.3f}",
+                    f"{resultat_z.x4_solvabilite:.3f}",
+                ],
+            }
+        )
+        st.caption(
+            "Modèle Z''-Score d'Altman pour entreprises non-manufacturières / "
+            "marchés émergents (Altman, Hartzell & Peck, 1995)."
+        )
 
 st.markdown("")
 st.subheader("2.2. Probabilités de transition (inertie matricielle)")
