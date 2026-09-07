@@ -20,6 +20,12 @@ Architecture (voir le paquet ``moteur/``) :
                                 humains (sidebar)
     5. visualisation        -- graphique en couronne (donut) Plotly
 
+Si aucune source automatique ne fournit de chiffres réels (API en échec,
+non configurée, ou comptes confidentiels), un formulaire de saisie manuelle
+(``st.number_input``) permet de renseigner le CA et le résultat net lus
+par l'utilisateur sur Pappers ou une autre source fiable -- jamais de
+valeur estimée par l'application elle-même.
+
 Avertissement méthodologique : le modèle de transition par inertie et les
 vraisemblances bayésiennes sont des heuristiques d'ingénierie construites
 pour cette application, pas des statistiques mesurées empiriquement -- voir
@@ -27,6 +33,8 @@ les docstrings de ``moteur/transition.py`` et ``moteur/bayes.py``.
 """
 
 from __future__ import annotations
+
+import datetime
 
 import streamlit as st
 
@@ -82,6 +90,65 @@ def _verifier_authentification() -> None:
             st.error("Mot de passe incorrect.")
 
     st.stop()
+
+
+def _proposer_saisie_manuelle(cle_entreprise: str) -> list[donnees_financieres.ExerciceFinancier] | None:
+    """Formulaire de secours : saisie manuelle du CA et du résultat net sur
+    3 exercices, lus par l'utilisateur sur Pappers (ou une autre source
+    fiable) lorsqu'aucune source automatique n'a pu les fournir.
+
+    Retourne les exercices dès qu'ils ont été validés une fois pour cette
+    entreprise (conservés dans ``st.session_state``, associés à son SIRET,
+    pour survivre aux interactions ultérieures comme les facteurs
+    bayésiens) ; retourne ``None`` tant que la saisie n'a pas été validée.
+    """
+    cle_session = f"exercices_manuels::{cle_entreprise}"
+
+    if cle_session in st.session_state:
+        return st.session_state[cle_session]
+
+    st.markdown("#### ✏️ Saisie manuelle")
+    st.caption(
+        "Renseignez le chiffre d'affaires et le résultat net réels des 3 derniers "
+        "exercices, tels que vous les lisez sur Pappers ou une autre source fiable. "
+        "N'indiquez que des valeurs réelles connues -- jamais une estimation."
+    )
+
+    annee_courante = datetime.date.today().year
+    with st.form("formulaire_saisie_manuelle"):
+        lignes_saisies = []
+        for i in range(3):
+            col_annee, col_ca, col_rn = st.columns(3)
+            annee = col_annee.number_input(
+                "Année", min_value=2000, max_value=annee_courante,
+                value=annee_courante - 1 - i, step=1, key=f"annee_manuelle_{i}",
+            )
+            chiffre_affaires = col_ca.number_input(
+                "Chiffre d'affaires (€)", min_value=0.0, value=0.0, step=1000.0,
+                format="%.2f", key=f"ca_manuel_{i}",
+            )
+            resultat_net = col_rn.number_input(
+                "Résultat net (€)", value=0.0, step=1000.0,
+                format="%.2f", key=f"rn_manuel_{i}",
+            )
+            lignes_saisies.append((int(annee), chiffre_affaires, resultat_net))
+
+        valide = st.form_submit_button("Valider et lancer l'analyse")
+
+    if not valide:
+        return None
+
+    annees_saisies = [ligne[0] for ligne in lignes_saisies]
+    if len(set(annees_saisies)) != len(annees_saisies):
+        st.error("Les 3 années saisies doivent être distinctes.")
+        return None
+
+    exercices_manuels = [
+        donnees_financieres.ExerciceFinancier(annee=a, chiffre_affaires=ca, resultat_net=rn)
+        for a, ca, rn in lignes_saisies
+    ]
+    st.session_state[cle_session] = exercices_manuels
+    st.rerun()
 
 
 _verifier_authentification()
@@ -180,24 +247,28 @@ if source_financiere == "confidentiel":
     st.caption(
         "Cette entreprise a fait usage de la déclaration de confidentialité de ses comptes "
         "annuels (article L.232-25 du code de commerce), ouverte à certaines petites "
-        "entreprises. Aucune donnée financière n'est donc publiquement consultable."
+        "entreprises. Les sources automatiques ne peuvent donc rien renvoyer."
     )
-    st.stop()
+elif exercices is None:
+    st.error(
+        "❌ **Données financières non disponibles automatiquement.** "
+        "Ni l'API RNE de l'INPI, ni l'API Pappers, ni la base vérifiée manuellement ne "
+        "contiennent les comptes de cette entreprise. Pour activer l'INPI, définissez "
+        "`INPI_USERNAME` et `INPI_PASSWORD` ; pour Pappers, définissez `PAPPERS_API_KEY`."
+    )
 
 if exercices is None:
-    st.error(
-        "❌ **Données financières non disponibles sur les registres publics.** "
-        "Aucune valeur n'est affichée ou estimée pour cette entreprise : ni l'API RNE de "
-        "l'INPI, ni l'API Pappers, ni la base vérifiée manuellement ne contiennent ses "
-        "comptes. Pour activer l'INPI, définissez `INPI_USERNAME` et `INPI_PASSWORD` ; "
-        "pour Pappers, définissez `PAPPERS_API_KEY`."
-    )
-    st.stop()
+    exercices = _proposer_saisie_manuelle(identite.siret)
+    if exercices is None:
+        st.stop()
+    source_financiere = "saisie_manuelle"
 
 if source_financiere == "inpi":
     st.success("✅ Chiffre d'affaires et résultat net récupérés via l'API RNE de l'INPI (source officielle).")
 elif source_financiere == "api_pappers":
     st.success("✅ Chiffre d'affaires et résultat net récupérés via l'API Pappers.")
+elif source_financiere == "saisie_manuelle":
+    st.success("✅ Chiffre d'affaires et résultat net saisis manuellement -- analyse lancée.")
 else:
     st.info(
         "ℹ️ Chiffre d'affaires et résultat net : données réelles vérifiées manuellement "
