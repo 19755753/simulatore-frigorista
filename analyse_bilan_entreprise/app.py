@@ -8,8 +8,9 @@ Architecture (voir le paquet ``moteur/``) :
     1. annuaire_entreprises -- identité légale réelle via l'API publique
                                 gratuite du gouvernement français
                                 (recherche-entreprises.api.gouv.fr)
-    2. donnees_financieres  -- chiffre d'affaires / résultat net réels,
-                                via l'API Pappers si configurée, sinon un
+    2. donnees_financieres  -- chiffre d'affaires / résultat net réels, via
+                                l'API RNE de l'INPI (source officielle) si
+                                configurée, puis l'API Pappers, puis un
                                 unique jeu de données vérifié (Olano
                                 Provence) -- jamais de valeur inventée
     3. transition           -- probabilités de transition par inertie
@@ -171,25 +172,37 @@ st.markdown("---")
 st.header("1. Données financières")
 
 exercices, source_financiere = donnees_financieres.obtenir_donnees_financieres(
-    identite.denomination, identite.siret
+    identite.denomination, identite.siret, identite.siren
 )
+
+if source_financiere == "confidentiel":
+    st.warning("🔒 Données financières confidentielles sur les registres légaux.")
+    st.caption(
+        "Cette entreprise a fait usage de la déclaration de confidentialité de ses comptes "
+        "annuels (article L.232-25 du code de commerce), ouverte à certaines petites "
+        "entreprises. Aucune donnée financière n'est donc publiquement consultable."
+    )
+    st.stop()
 
 if exercices is None:
     st.error(
         "❌ **Données financières non disponibles sur les registres publics.** "
-        "Aucune valeur n'est affichée ou estimée pour cette entreprise : ni l'API Pappers "
-        "(non configurée ou sans résultat) ni la base vérifiée manuellement ne contiennent "
-        "ses comptes. Pour activer l'API Pappers, définissez la variable d'environnement "
-        "`PAPPERS_API_KEY`."
+        "Aucune valeur n'est affichée ou estimée pour cette entreprise : ni l'API RNE de "
+        "l'INPI, ni l'API Pappers, ni la base vérifiée manuellement ne contiennent ses "
+        "comptes. Pour activer l'INPI, définissez `INPI_USERNAME` et `INPI_PASSWORD` ; "
+        "pour Pappers, définissez `PAPPERS_API_KEY`."
     )
     st.stop()
 
-if source_financiere == "api_pappers":
+if source_financiere == "inpi":
+    st.success("✅ Chiffre d'affaires et résultat net récupérés via l'API RNE de l'INPI (source officielle).")
+elif source_financiere == "api_pappers":
     st.success("✅ Chiffre d'affaires et résultat net récupérés via l'API Pappers.")
 else:
     st.info(
         "ℹ️ Chiffre d'affaires et résultat net : données réelles vérifiées manuellement "
-        "(l'API Pappers n'est pas configurée -- définissez `PAPPERS_API_KEY` pour l'activer)."
+        "(ni l'INPI ni Pappers ne sont configurés ou n'ont renvoyé de résultat -- "
+        "définissez `INPI_USERNAME`/`INPI_PASSWORD` ou `PAPPERS_API_KEY` pour les activer)."
     )
 
 if len(exercices) < 2:
