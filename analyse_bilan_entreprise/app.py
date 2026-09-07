@@ -1,30 +1,27 @@
 """Application Streamlit -- Analyse prédictive et probabiliste de bilans
-d'entreprises françaises.
+d'entreprises françaises. Version volontairement ultra-simple et robuste :
+pas de fonction complexe mise en cache pour les données financières (source
+d'un TypeError en production après un redéploiement partiel), pas de
+dépendance à des API tierces nécessitant des identifiants (INPI, Pappers).
 
 Lancement :
     streamlit run app.py
 
-Architecture (voir le paquet ``moteur/``) :
-    1. annuaire_entreprises -- identité légale réelle via l'API publique
-                                gratuite du gouvernement français
-                                (recherche-entreprises.api.gouv.fr)
-    2. donnees_financieres  -- chiffre d'affaires / résultat net réels, via
-                                l'API RNE de l'INPI (source officielle) si
-                                configurée, puis l'API Pappers, puis un
-                                unique jeu de données vérifié (Olano
-                                Provence) -- jamais de valeur inventée
-    3. transition           -- probabilités de transition par inertie
-                                matricielle, à partir des 3 derniers
-                                exercices réels
-    4. bayes                -- correction bayésienne à partir de 2 facteurs
-                                humains (sidebar)
-    5. visualisation        -- graphique en couronne (donut) Plotly
-
-Si aucune source automatique ne fournit de chiffres réels (API en échec,
-non configurée, ou comptes confidentiels), un formulaire de saisie manuelle
-(``st.number_input``) permet de renseigner le CA et le résultat net lus
-par l'utilisateur sur Pappers ou une autre source fiable -- jamais de
-valeur estimée par l'application elle-même.
+Étapes :
+    1. Mot de passe ("Olano2026" par défaut, voir ``st.secrets``).
+    2. Recherche d'identité légale réelle via l'API publique et gratuite du
+       gouvernement français (recherche-entreprises.api.gouv.fr).
+    3. Saisie du chiffre d'affaires et du résultat net des 3 derniers
+       exercices (``st.number_input``, pré-remplis avec les données réelles
+       vérifiées d'Olano Provence si l'entreprise trouvée correspond,
+       sinon à 0) -- l'utilisateur lit ces chiffres sur Pappers ou un
+       autre registre officiel et les saisit lui-même ; l'application
+       n'en invente ni n'en télécharge aucun.
+    4. Calcul des probabilités de transition (inertie matricielle, voir
+       ``moteur/transition.py``) puis correction bayésienne (2 facteurs
+       humains en sidebar, voir ``moteur/bayes.py``) et graphique en
+       couronne Plotly (voir ``moteur/visualisation.py``) -- recalculés
+       instantanément à chaque modification d'un chiffre ou d'un facteur.
 
 Avertissement méthodologique : le modèle de transition par inertie et les
 vraisemblances bayésiennes sont des heuristiques d'ingénierie construites
@@ -35,10 +32,11 @@ les docstrings de ``moteur/transition.py`` et ``moteur/bayes.py``.
 from __future__ import annotations
 
 import datetime
+import unicodedata
 
 import streamlit as st
 
-from moteur import annuaire_entreprises, bayes, donnees_financieres, transition, visualisation
+from moteur import annuaire_entreprises, bayes, transition, visualisation
 
 st.set_page_config(
     page_title="Analyse prédictive de bilans d'entreprises",
@@ -55,13 +53,9 @@ MOT_DE_PASSE_PAR_DEFAUT = "Olano2026"
 
 
 def _obtenir_mot_de_passe_attendu() -> str:
-    """Retourne le mot de passe attendu.
-
-    Priorité à ``st.secrets["MOT_DE_PASSE_APP"]`` s'il est défini (méthode
-    recommandée sur Streamlit Community Cloud : Settings > Secrets), ce qui
-    évite d'exposer le mot de passe en clair dans le dépôt public. À défaut,
-    la valeur par défaut ci-dessus est utilisée.
-    """
+    """Priorité à ``st.secrets["MOT_DE_PASSE_APP"]`` (Streamlit Cloud :
+    Settings > Secrets) pour éviter d'exposer le mot de passe en clair dans
+    le dépôt public ; sinon la valeur par défaut ci-dessus."""
     try:
         return st.secrets.get("MOT_DE_PASSE_APP", MOT_DE_PASSE_PAR_DEFAUT)
     except Exception:
@@ -70,8 +64,7 @@ def _obtenir_mot_de_passe_attendu() -> str:
 
 def _verifier_authentification() -> None:
     """Bloque l'accès à l'application tant que le mot de passe correct n'a
-    pas été saisi. Interrompt l'exécution du script (``st.stop()``) tant que
-    l'utilisateur n'est pas authentifié."""
+    pas été saisi."""
     if st.session_state.get("authentifie", False):
         return
 
@@ -90,65 +83,6 @@ def _verifier_authentification() -> None:
             st.error("Mot de passe incorrect.")
 
     st.stop()
-
-
-def _proposer_saisie_manuelle(cle_entreprise: str) -> list[donnees_financieres.ExerciceFinancier] | None:
-    """Formulaire de secours : saisie manuelle du CA et du résultat net sur
-    3 exercices, lus par l'utilisateur sur Pappers (ou une autre source
-    fiable) lorsqu'aucune source automatique n'a pu les fournir.
-
-    Retourne les exercices dès qu'ils ont été validés une fois pour cette
-    entreprise (conservés dans ``st.session_state``, associés à son SIRET,
-    pour survivre aux interactions ultérieures comme les facteurs
-    bayésiens) ; retourne ``None`` tant que la saisie n'a pas été validée.
-    """
-    cle_session = f"exercices_manuels::{cle_entreprise}"
-
-    if cle_session in st.session_state:
-        return st.session_state[cle_session]
-
-    st.markdown("#### ✏️ Saisie manuelle")
-    st.caption(
-        "Renseignez le chiffre d'affaires et le résultat net réels des 3 derniers "
-        "exercices, tels que vous les lisez sur Pappers ou une autre source fiable. "
-        "N'indiquez que des valeurs réelles connues -- jamais une estimation."
-    )
-
-    annee_courante = datetime.date.today().year
-    with st.form("formulaire_saisie_manuelle"):
-        lignes_saisies = []
-        for i in range(3):
-            col_annee, col_ca, col_rn = st.columns(3)
-            annee = col_annee.number_input(
-                "Année", min_value=2000, max_value=annee_courante,
-                value=annee_courante - 1 - i, step=1, key=f"annee_manuelle_{i}",
-            )
-            chiffre_affaires = col_ca.number_input(
-                "Chiffre d'affaires (€)", min_value=0.0, value=0.0, step=1000.0,
-                format="%.2f", key=f"ca_manuel_{i}",
-            )
-            resultat_net = col_rn.number_input(
-                "Résultat net (€)", value=0.0, step=1000.0,
-                format="%.2f", key=f"rn_manuel_{i}",
-            )
-            lignes_saisies.append((int(annee), chiffre_affaires, resultat_net))
-
-        valide = st.form_submit_button("Valider et lancer l'analyse")
-
-    if not valide:
-        return None
-
-    annees_saisies = [ligne[0] for ligne in lignes_saisies]
-    if len(set(annees_saisies)) != len(annees_saisies):
-        st.error("Les 3 années saisies doivent être distinctes.")
-        return None
-
-    exercices_manuels = [
-        donnees_financieres.ExerciceFinancier(annee=a, chiffre_affaires=ca, resultat_net=rn)
-        for a, ca, rn in lignes_saisies
-    ]
-    st.session_state[cle_session] = exercices_manuels
-    st.rerun()
 
 
 _verifier_authentification()
@@ -182,13 +116,13 @@ reponses_bayesiennes = {
 
 
 # ---------------------------------------------------------------------------
-# Corps principal -- recherche d'entreprise
+# Recherche d'entreprise (identité légale réelle)
 # ---------------------------------------------------------------------------
 
 st.title("📊 Analyse prédictive et probabiliste de bilans d'entreprises")
 st.caption(
-    "Identité légale en temps réel (API publique gouvernementale) + données "
-    "financières réelles -- modèle d'inertie matricielle et correction bayésienne."
+    "Identité légale en temps réel (API publique gouvernementale) + saisie du CA et du "
+    "résultat net -- modèle d'inertie matricielle et correction bayésienne."
 )
 
 with st.form("formulaire_recherche"):
@@ -209,7 +143,7 @@ if not requete_active:
     st.stop()
 
 with st.spinner(f"Recherche de « {requete_active} » sur le registre public (api.gouv.fr)..."):
-    identite = annuaire_entreprises.rechercher_entreprise(requete_active)
+    identite = annuaire_entreprises.rechercher_entreprise(requete_active.strip())
 
 if identite is None:
     st.error(
@@ -233,57 +167,63 @@ st.caption(
 st.markdown("---")
 
 # ---------------------------------------------------------------------------
-# 1. Données financières réelles
+# 1. Chiffre d'affaires et résultat net (saisie directe)
 # ---------------------------------------------------------------------------
 
 st.header("1. Données financières")
-
-exercices, source_financiere = donnees_financieres.obtenir_donnees_financieres(
-    identite.denomination, identite.siret, identite.siren
+st.caption(
+    "Saisissez le chiffre d'affaires et le résultat net réels des 3 derniers exercices "
+    "(source : Pappers ou un autre registre officiel). Chaque modification recalcule "
+    "immédiatement l'analyse ci-dessous."
 )
 
-if source_financiere == "confidentiel":
-    st.warning("🔒 Données financières confidentielles sur les registres légaux.")
-    st.caption(
-        "Cette entreprise a fait usage de la déclaration de confidentialité de ses comptes "
-        "annuels (article L.232-25 du code de commerce), ouverte à certaines petites "
-        "entreprises. Les sources automatiques ne peuvent donc rien renvoyer."
-    )
-elif exercices is None:
-    st.error(
-        "❌ **Données financières non disponibles automatiquement.** "
-        "Ni l'API RNE de l'INPI, ni l'API Pappers, ni la base vérifiée manuellement ne "
-        "contiennent les comptes de cette entreprise. Pour activer l'INPI, définissez "
-        "`INPI_USERNAME` et `INPI_PASSWORD` ; pour Pappers, définissez `PAPPERS_API_KEY`."
-    )
 
-if exercices is None:
-    exercices = _proposer_saisie_manuelle(identite.siret)
-    if exercices is None:
-        st.stop()
-    source_financiere = "saisie_manuelle"
+def _normaliser(texte: str) -> str:
+    texte_sans_accents = unicodedata.normalize("NFKD", texte).encode("ascii", "ignore").decode("ascii")
+    return " ".join(texte_sans_accents.upper().split())
 
-if source_financiere == "inpi":
-    st.success("✅ Chiffre d'affaires et résultat net récupérés via l'API RNE de l'INPI (source officielle).")
-elif source_financiere == "api_pappers":
-    st.success("✅ Chiffre d'affaires et résultat net récupérés via l'API Pappers.")
-elif source_financiere == "saisie_manuelle":
-    st.success("✅ Chiffre d'affaires et résultat net saisis manuellement -- analyse lancée.")
+
+# Pré-remplissage avec les données réelles vérifiées d'Olano Provence si
+# l'entreprise trouvée y correspond (comparaison souple : la dénomination
+# officielle renvoyée par l'API peut inclure un suffixe de forme juridique).
+# Pour toute autre entreprise, les champs sont initialisés à 0 -- aucune
+# valeur n'est devinée ou inventée par l'application.
+ANNEE_COURANTE = datetime.date.today().year
+if "OLANO PROVENCE" in _normaliser(identite.denomination):
+    valeurs_par_defaut = [
+        (2024, 8_980_000.0, -2_190_000.0),
+        (2023, 18_100_000.0, -1_190_000.0),
+        (2022, 32_100_000.0, 0.0),
+    ]
 else:
-    st.info(
-        "ℹ️ Chiffre d'affaires et résultat net : données réelles vérifiées manuellement "
-        "(ni l'INPI ni Pappers ne sont configurés ou n'ont renvoyé de résultat -- "
-        "définissez `INPI_USERNAME`/`INPI_PASSWORD` ou `PAPPERS_API_KEY` pour les activer)."
+    valeurs_par_defaut = [(ANNEE_COURANTE - i, 0.0, 0.0) for i in (1, 2, 3)]
+
+annees: list[int] = []
+chiffres_affaires: list[float] = []
+resultats_nets: list[float] = []
+
+for indice, (annee_defaut, ca_defaut, rn_defaut) in enumerate(valeurs_par_defaut):
+    col_annee, col_ca, col_rn = st.columns(3)
+    annee = col_annee.number_input(
+        "Année", min_value=2000, max_value=ANNEE_COURANTE,
+        value=annee_defaut, step=1, key=f"annee_{indice}",
     )
+    chiffre_affaires = col_ca.number_input(
+        "Chiffre d'affaires (€)", min_value=0.0, value=ca_defaut,
+        step=1000.0, format="%.2f", key=f"ca_{indice}",
+    )
+    resultat_net = col_rn.number_input(
+        "Résultat net (€)", value=rn_defaut,
+        step=1000.0, format="%.2f", key=f"rn_{indice}",
+    )
+    annees.append(int(annee))
+    chiffres_affaires.append(chiffre_affaires)
+    resultats_nets.append(resultat_net)
 
-if len(exercices) < 2:
-    st.error("Au moins 2 exercices comptables sont nécessaires pour cette analyse ; un seul est disponible.")
-    st.stop()
-
-exercices_tries = sorted(exercices, key=lambda e: e.annee)
-annees = [ex.annee for ex in exercices_tries]
-resultats_nets = [ex.resultat_net for ex in exercices_tries]
-chiffres_affaires = [ex.chiffre_affaires for ex in exercices_tries]
+ordre = sorted(range(len(annees)), key=lambda i: annees[i])
+annees = [annees[i] for i in ordre]
+chiffres_affaires = [chiffres_affaires[i] for i in ordre]
+resultats_nets = [resultats_nets[i] for i in ordre]
 
 st.dataframe(
     {
